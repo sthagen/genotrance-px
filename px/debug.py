@@ -15,6 +15,7 @@ def pprint(*objs):
     except:
         pass
 
+
 class Debug:
     "Redirect stdout to a file for debugging"
 
@@ -26,13 +27,13 @@ class Debug:
     name = ""
     mode = ""
 
-    def __new__(cls, name = "", mode = ""):
+    def __new__(cls, name="", mode=""):
         "Create a singleton instance of Debug"
         if cls.instance is None:
             cls.instance = super().__new__(cls)
         return cls.instance
 
-    def __init__(self, name = "", mode = ""):
+    def __init__(self, name="", mode=""):
         if isinstance(sys.stdout, Debug):
             # Restore stdout since child inherits parent's Debug instance on Linux
             sys.stderr = sys.stdout.stderr
@@ -93,13 +94,22 @@ class Debug:
             except ValueError:
                 break
         sys.stdout.write(
-            multiprocessing.current_process().name + ": " +
-            threading.current_thread().name + ": " + str(int(time.time())) +
-            ": " + tree + ": " + msg + "\n")
+            multiprocessing.current_process().name
+            + ": "
+            + threading.current_thread().name
+            + ": "
+            + str(int(time.time()))
+            + ": "
+            + tree
+            + ": "
+            + msg
+            + "\n"
+        )
 
     def get_print(self):
         "Get self.print() method to call directly as print(msg)"
         return self.print
+
 
 def dprint(msg):
     "Print debug message if debug is enabled"

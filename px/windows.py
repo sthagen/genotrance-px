@@ -17,10 +17,12 @@ except ImportError:
 ###
 # Install Px to startup
 
+
 def is_installed():
     "Check if Px is already installed in the Windows registry"
-    runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-        r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+    runkey = winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ
+    )
     try:
         winreg.QueryValueEx(runkey, "Px")
     except FileNotFoundError:
@@ -28,6 +30,7 @@ def is_installed():
     finally:
         winreg.CloseKey(runkey)
     return True
+
 
 def install(script_cmd, pxini, force_overwrite):
     "Install Px to Windows registry if not already"
@@ -48,12 +51,12 @@ def install(script_cmd, pxini, force_overwrite):
         if " " in pxini:
             cmd += f' "--config={pxini}"'
         else:
-            cmd += f' --config={pxini}'
+            cmd += f" --config={pxini}"
 
         # Write to registry
-        runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
-            winreg.KEY_WRITE)
+        runkey = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_WRITE
+        )
         winreg.SetValueEx(runkey, "Px", 0, winreg.REG_EXPAND_SZ, cmd)
         winreg.CloseKey(runkey)
         pprint("Px installed successfully")
@@ -62,12 +65,13 @@ def install(script_cmd, pxini, force_overwrite):
 
     sys.exit(config.ERROR_SUCCESS)
 
+
 def uninstall():
     "Uninstall Px from Windows registry if installed"
     if is_installed() is True:
-        runkey = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Run", 0,
-            winreg.KEY_WRITE)
+        runkey = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_WRITE
+        )
         winreg.DeleteValue(runkey, "Px")
         winreg.CloseKey(runkey)
         pprint("Px uninstalled successfully")
@@ -76,8 +80,10 @@ def uninstall():
 
     sys.exit(config.ERROR_SUCCESS)
 
+
 ###
 # Attach/detach console
+
 
 def reopen_stdout(state):
     """Reopen stdout after attaching to the console"""
@@ -92,6 +98,7 @@ def reopen_stdout(state):
         state.debug.stdout = open("CONOUT$", "w")
         state.debug.stdout.write(clrstr)
 
+
 def restore_stdout(state):
     """Restore stdout before detaching from the console"""
 
@@ -101,6 +108,7 @@ def restore_stdout(state):
     else:
         state.debug.stdout.close()
         state.debug.stdout = state.stdout
+
 
 def attach_console(state):
     if ctypes.windll.kernel32.GetConsoleWindow() != 0:
@@ -112,7 +120,13 @@ def attach_console(state):
     ppid_with_console = -1
     for par in process.parents():
         if os.path.basename(par.name()).lower() in [
-                "cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe"]:
+            "cmd",
+            "cmd.exe",
+            "powershell",
+            "powershell.exe",
+            "pwsh",
+            "pwsh.exe",
+        ]:
             # Found it
             ppid_with_console = par.pid
             break
@@ -124,8 +138,7 @@ def attach_console(state):
 
     dprint("Attaching to console " + str(ppid_with_console))
     if ctypes.windll.kernel32.AttachConsole(ppid_with_console) == 0:
-        dprint("Attach failed with error " +
-            str(ctypes.windll.kernel32.GetLastError()))
+        dprint("Attach failed with error " + str(ctypes.windll.kernel32.GetLastError()))
         return
 
     if ctypes.windll.kernel32.GetConsoleWindow() == 0:
@@ -134,6 +147,7 @@ def attach_console(state):
 
     reopen_stdout(state)
 
+
 def detach_console(state):
     if ctypes.windll.kernel32.GetConsoleWindow() == 0:
         return
@@ -141,7 +155,6 @@ def detach_console(state):
     restore_stdout(state)
 
     if not ctypes.windll.kernel32.FreeConsole():
-        dprint("Free console failed with error " +
-            str(ctypes.windll.kernel32.GetLastError()))
+        dprint("Free console failed with error " + str(ctypes.windll.kernel32.GetLastError()))
     else:
         dprint("Freed console successfully")

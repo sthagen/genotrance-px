@@ -13,47 +13,30 @@ px --pac=file:///path/to/config.pac
 
 # Run with verbose logging
 px --proxy=proxyserver.com:80 --verbose
+
+# Save configuration to px.ini
+px --proxy=proxyserver.com:8080 --save
+
+# Test connectivity
+px --test
 ```
 
-## Configuration
+For all CLI flags, environment variables, and INI keys, see the
+[configuration reference](configuration.md).
 
-Px requires only one piece of information to function — the server name and port
-of the proxy server. If not specified, Px will check Internet Options or
-environment variables for any proxy definitions. Without this, Px will try to
-connect to sites directly.
+## Running Px
 
-The `noproxy` capability allows Px to connect to configured hosts directly,
-bypassing the proxy altogether.
+Once installed, Px can be run as follows:
 
-Configuration can be specified in multiple ways, listed in order of precedence:
-
-1. **Command line flags**
-2. **Environment variables** prefixed with `PX_`
-3. **Variables in a dotenv file** (`.env`) — in the working directory or Px directory
-4. **Configuration file** `px.ini` — searched in:
-   - Working directory
-   - User config directory
-     - Windows: `%APPDATA%\Roaming\px`
-     - Linux: `~/.config/px`
-     - Mac: `~/Library/Application Support/px`
-   - Px directory
-
-Refer to `px --help` or see the [configuration reference](configuration.md) for
-all options.
-
-### Saving configuration
-
-The `--save` flag writes the current configuration to `px.ini`:
-
-- Px saves to `--config=path/px.ini` or `PX_CONFIG` if specified.
-- Otherwise, it loads `px.ini` from the working, user config or Px directory if
-  it exists and updates it.
-- If the file is not writable, it tries the next location in order.
-- If no `px.ini` is found, it defaults to the user config directory.
+- `px` or `python -m px` — run in foreground
+- `pxw` or `pythonw -m px` — run in the background (Windows)
+- `px --quit` — stop a running instance
+- `px --restart` — stop and start a new instance
+- `CTRL-C` — stop when running in the foreground
 
 ### Windows auto-start
 
-Px can be setup to run on startup on Windows:
+Px can be set up to run on startup on Windows:
 
     pxw --install
 
@@ -61,6 +44,9 @@ Remove with `--uninstall`. Use `--force` to overwrite an existing entry. If
 `px.ini` is at a non-default location:
 
     pxw --install --config=path/px.ini
+
+Command line parameters passed with `--install` are not saved for use on
+startup. Use `--save` or edit `px.ini` manually.
 
 ## Credentials
 
@@ -80,6 +66,13 @@ Information on keyring backends: <https://pypi.org/project/keyring>
 
 As an alternative, `PX_PASSWORD` or a dotenv file can supply credentials (only
 recommended when keyring is not available).
+
+### Plaintext keyring fallback
+
+If the system keyring is unavailable or problematic, set `PX_KEYRING_PLAINTEXT=1`
+to use a plaintext file-based keyring backend. **This is not recommended** as
+passwords are stored unencrypted on disk, but it is available as a fallback option
+when other backends fail.
 
 ### Windows
 
@@ -184,6 +177,7 @@ keepalive period is 60 seconds.
 Px depends on the following Python packages:
 
 - [keyring](https://pypi.org/project/keyring/)
+- [keyrings.alt](https://pypi.org/project/keyrings.alt/)
 - [netaddr](https://pypi.org/project/netaddr/)
 - [pymcurl](https://pypi.org/project/pymcurl/)
 - [psutil](https://pypi.org/project/psutil/)

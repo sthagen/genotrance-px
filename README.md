@@ -16,12 +16,22 @@ Px uses libcurl and supports all the authentication mechanisms supported by
 
 **Requires Python ≥ 3.10**
 
+## Installation
+
+```bash
+python -m pip install px-proxy
+```
+
+On Windows, [scoop](https://scoop.sh) can also be used: `scoop install px`
+
+Prebuilt binaries and offline wheel packages are available on the
+[releases](https://github.com/genotrance/px/releases) page. See the
+[installation guide](https://github.com/genotrance/px/blob/master/docs/installation.md)
+for all options including Docker, WinSW, and source installs.
+
 ## Quick start
 
 ```bash
-# Install
-python -m pip install px-proxy
-
 # Run with an upstream proxy
 px --proxy=proxyserver.com:8080
 
@@ -30,24 +40,65 @@ px --pac=http://example.com/proxy.pac
 
 # Run with verbose logging
 px --proxy=proxyserver.com:80 --verbose
+
+# Save configuration to px.ini
+px --proxy=proxyserver.com:8080 --save
+
+# Test connectivity
+px --test
 ```
 
-See `px --help` for all options.
+## Configuration
+
+Px can be configured via command-line flags, environment variables (`PX_*`),
+dotenv files, or `px.ini`. See `px --help` for all options.
+
+Common options:
+
+| Flag | Description |
+|------|-------------|
+| `--proxy=HOST:PORT` | Upstream proxy server(s), comma-separated |
+| `--pac=URL` | PAC file URL or local path |
+| `--port=NUM` | Listening port (default 3128) |
+| `--gateway` | Allow remote clients |
+| `--hostonly` | Restrict to local interfaces |
+| `--noproxy=LIST` | Hosts/IPs that bypass the upstream proxy |
+| `--auth=TYPE` | Force upstream auth type (ANY, NTLM, NEGOTIATE, BASIC, NONE) |
+| `--username=DOMAIN\user` | Username for upstream proxy auth |
+| `--log=4` | Log to stdout (verbose mode) |
+
+Full reference:
+[Configuration](https://github.com/genotrance/px/blob/master/docs/configuration.md)
+
+### Credentials
+
+If SSPI is not available, provide `--username` in `domain\username` format. The
+password is stored in the system keyring:
+
+```bash
+px --username=domain\username --password
+```
+
+`PX_PASSWORD` can be used as an alternative when keyring is not available.
+
+See the
+[usage guide](https://github.com/genotrance/px/blob/master/docs/usage.md)
+for platform-specific keyring setup and client authentication.
 
 ## Documentation
 
 | | |
 |---|---|
 | **User guides** | |
-| [Installation](docs/installation.md) | pip, wheels, binary, Docker, scoop, WinSW, uninstallation |
-| [Usage](docs/usage.md) | Configuration, credentials, client auth, examples, dependencies, limitations |
+| [Installation](https://github.com/genotrance/px/blob/master/docs/installation.md) | pip, wheels, binary, Docker, scoop, WinSW, uninstallation |
+| [Usage](https://github.com/genotrance/px/blob/master/docs/usage.md) | Credentials, client auth, examples, dependencies, limitations |
+| [Configuration](https://github.com/genotrance/px/blob/master/docs/configuration.md) | All CLI flags, environment variables, INI keys, auth types |
 | **Developer guides** | |
-| [Architecture](docs/architecture.md) | Runtime model, package layout, authentication, proxy discovery |
-| [Build](docs/build.md) | Build system, `pyproject.toml`, `build.sh`, wheels, Nuitka, Docker images |
-| [Configuration internals](docs/configuration.md) | `State` singleton, option reference, config sources |
-| [Testing](docs/testing.md) | Test suite layout, running tests, fixtures, coverage |
+| [Architecture](https://github.com/genotrance/px/blob/master/docs/architecture.md) | Runtime model, package layout, data flow, state management |
+| [Build](https://github.com/genotrance/px/blob/master/docs/build.md) | Build system, `pyproject.toml`, GitHub Actions, wheels, Nuitka, Docker |
+| [Testing](https://github.com/genotrance/px/blob/master/docs/testing.md) | Test suite layout, running tests, fixtures, coverage |
 | **Reference** | |
-| [Changelog](docs/changelog.md) | Release history |
+| [Changelog](https://github.com/genotrance/px/blob/master/docs/changelog.md) | Release history |
 
 ## Development
 

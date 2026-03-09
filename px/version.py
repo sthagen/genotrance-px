@@ -1,3 +1,5 @@
 "Px version"
 
-__version__ = "0.10.3"
+from importlib.metadata import version
+
+__version__ = version("px-proxy")

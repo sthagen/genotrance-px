@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master, devel]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Run checks
+        run: make check
+
+  tests:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.14"]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash
+    name: test ${{ matrix.os }} py${{ matrix.python-version }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run tests
+        timeout-minutes: 60
+        run: |
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            uv run python -m pytest tests -n 2 --tb=short -q
+          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
+            PX_CI_MINIMAL=1 uv run python -m pytest tests -n 4 --tb=short -q --ignore=tests/test_network.py
+          else
+            uv run python -m pytest tests -n 4 --tb=short -q
+          fi

@@ -1,6 +1,7 @@
 "Configuration and state management"
 
 import configparser
+import contextlib
 import getpass
 import multiprocessing
 import os
@@ -20,14 +21,14 @@ if sys.platform == "win32":
 # Errors
 PxErrors = int
 (
-    ERROR_SUCCESS,    # 0
-    ERROR_IMPORT,     # 1
-    ERROR_CONFIG,     # 2
-    ERROR_QUIT,       # 3
-    ERROR_TEST,       # 4
+    ERROR_SUCCESS,  # 0
+    ERROR_IMPORT,  # 1
+    ERROR_CONFIG,  # 2
+    ERROR_QUIT,  # 3
+    ERROR_TEST,  # 4
     ERROR_PORTINUSE,  # 5
-    ERROR_INSTALL,    # 6
-    ERROR_UNKNOWN,    # 7
+    ERROR_INSTALL,  # 6
+    ERROR_UNKNOWN,  # 7
 ) = range(8)
 
 try:
@@ -38,6 +39,7 @@ except ImportError:
 
 try:
     import keyring
+    import keyring.backend
 
     # Explicit imports for Nuitka
     if sys.platform == "win32":
@@ -48,6 +50,12 @@ try:
         import keyring.backends.macOS
 except ImportError:
     pprint("Requires module keyring")
+    sys.exit(ERROR_IMPORT)
+
+try:
+    import keyrings.alt.file
+except ImportError:
+    pprint("Requires module keyrings.alt")
     sys.exit(ERROR_IMPORT)
 
 try:
@@ -72,15 +80,10 @@ except ImportError:
 REALM = "Px"
 CLIENT_REALM = "PxClient"
 
+
 # Debug log locations
 LogLocation = int
-(
-    LOG_NONE,
-    LOG_SCRIPTDIR,
-    LOG_CWD,
-    LOG_UNIQLOG,
-    LOG_STDOUT
-) = range(5)
+(LOG_NONE, LOG_SCRIPTDIR, LOG_CWD, LOG_UNIQLOG, LOG_STDOUT) = range(5)
 
 ###
 # Get info
@@ -107,10 +110,10 @@ def get_script_cmd():
     if spath[-3:] == ".py":
         if "__main__.py" in spath:
             # Case "python -m px"
-            return sys.executable + ' -m px'
+            return sys.executable + " -m px"
         else:
             # Case: "python px.py"
-            return sys.executable + ' "%s"' % spath
+            return sys.executable + f' "{spath}"'
 
     # Case: "px.exe" from pip
     # Case: "px.exe" from nuitka
@@ -120,14 +123,11 @@ def get_script_cmd():
 def get_config_dir():
     "Get OS specific config directory"
     if sys.platform == "win32":
-        config_dir = os.getenv("APPDATA", os.path.join(
-            os.path.expanduser("~"), "AppData", "Roaming"))
+        config_dir = os.getenv("APPDATA", os.path.join(os.path.expanduser("~"), "AppData", "Roaming"))
     elif sys.platform == "darwin":
-        config_dir = os.path.join(
-            os.path.expanduser("~"), "Library", "Application Support")
+        config_dir = os.path.join(os.path.expanduser("~"), "Library", "Application Support")
     else:
-        config_dir = os.getenv("XDG_CONFIG_HOME",
-            os.path.join(os.path.expanduser("~"), ".config"))
+        config_dir = os.getenv("XDG_CONFIG_HOME", os.path.join(os.path.expanduser("~"), ".config"))
     return os.path.join(config_dir, "px")
 
 
@@ -186,11 +186,11 @@ def get_host_ips():
 def file_url_to_local_path(file_url):
     parts = urllib.parse.urlparse(file_url)
     path = urllib.parse.unquote(parts.path)
-    if path.startswith('/') and not path.startswith('//'):
-        if len(parts.netloc) == 2 and parts.netloc[1] == ':':
+    if path.startswith("/") and not path.startswith("//"):
+        if len(parts.netloc) == 2 and parts.netloc[1] == ":":
             return parts.netloc + path
-        return 'C:' + path
-    if len(path) > 2 and path[1] == ':':
+        return "C:" + path
+    if len(path) > 2 and path[1] == ":":
         return path
 
 
@@ -210,9 +210,10 @@ def get_listen():
                 return ""
         elif STATE.hostonly:
             # Use first host IP
-            listen = str(list(hostips)[0])
+            listen = str(next(iter(hostips)))
 
     return listen
+
 
 ###
 # Actions
@@ -256,7 +257,7 @@ def quit(exit=True):
 
     # Connect to Px and send quit request
     url = f"http://{listen}:{port}/PxQuit"
-    mc = mcurl.MCurl(debug_print=dprint)
+    _mc = mcurl.MCurl(debug_print=dprint)
     ec = mcurl.Curl(url)
     ec.buffer()
     success = False
@@ -313,6 +314,7 @@ def quit(exit=True):
 
     return ret
 
+
 ###
 # Parse settings and command line
 
@@ -338,8 +340,7 @@ DEFAULTS = {
     "proxyreload": "60",
     "foreground": "0",
     "log": "0",
-
-    "test": None
+    "test": None,
 }
 
 # Client authentication related
@@ -367,7 +368,7 @@ class State:
     auth = "ANY"
     username = ""
 
-    client_auth = []
+    client_auth: list = []
     client_username = ""
     client_nosspi = False
 
@@ -417,8 +418,7 @@ class State:
             "idle": self.set_idle,
             "socktimeout": self.set_socktimeout,
             "proxyreload": self.set_proxyreload,
-
-            "test": self.set_test
+            "test": self.set_test,
         }
 
     def set_pac(self, pac):
@@ -447,7 +447,7 @@ class State:
         if pacproxy:
             self.pac = pac
         else:
-            pprint("Unsupported PAC location or file not found: %s" % pac)
+            pprint(f"Unsupported PAC location or file not found: {pac}")
             sys.exit(ERROR_CONFIG)
 
     def set_listen(self, listen):
@@ -463,10 +463,10 @@ class State:
                     self.listen.append(clean)
 
     def set_gateway(self, gateway):
-        self.gateway = True if gateway == 1 else False
+        self.gateway = gateway == 1
 
     def set_hostonly(self, hostonly):
-        self.hostonly = True if hostonly == 1 else False
+        self.hostonly = hostonly == 1
 
     def set_allow(self, allow):
         self.allow, _ = wproxy.parse_noproxy(allow, iponly=True)
@@ -483,8 +483,7 @@ class State:
     def set_password(self):
         try:
             if len(self.username) == 0:
-                pprint(
-                    "domain\\username missing - specify via --username or configure in px.ini")
+                pprint("domain\\username missing - specify via --username or configure in px.ini")
                 sys.exit(ERROR_CONFIG)
             pprint("Setting password for '" + self.username + "'")
 
@@ -519,8 +518,7 @@ class State:
             if len(self.client_username) == 0:
                 pprint("domain\\username missing - specify via --client-username")
                 sys.exit(ERROR_CONFIG)
-            pprint("Setting client password for '" +
-                   self.client_username + "'")
+            pprint("Setting client password for '" + self.client_username + "'")
 
             pwd = ""
             while len(pwd) == 0:
@@ -591,10 +589,8 @@ class State:
     def cfg_int_init(self, section, name, default, proc=None, override=False):
         val = default
         if not override:
-            try:
+            with contextlib.suppress(configparser.NoOptionError):
                 val = self.config.get(section, name).strip()
-            except configparser.NoOptionError:
-                pass
 
         try:
             val = int(val)
@@ -609,10 +605,8 @@ class State:
     def cfg_float_init(self, section, name, default, proc=None, override=False):
         val = default
         if not override:
-            try:
+            with contextlib.suppress(configparser.NoOptionError):
                 val = self.config.get(section, name).strip()
-            except configparser.NoOptionError:
-                pass
 
         try:
             val = float(val)
@@ -627,10 +621,8 @@ class State:
     def cfg_str_init(self, section, name, default, proc=None, override=False):
         val = default
         if not override:
-            try:
+            with contextlib.suppress(configparser.NoOptionError):
                 val = self.config.get(section, name).strip()
-            except configparser.NoOptionError:
-                pass
 
         self.config.set(section, name, val)
 
@@ -640,8 +632,7 @@ class State:
     def cfg_init(self, name, val, override=False):
         callback = self.callbacks.get(name)
         # [proxy]
-        if name in ["server", "pac", "pac_encoding", "listen", "allow", "noproxy",
-                    "useragent", "username", "auth"]:
+        if name in ["server", "pac", "pac_encoding", "listen", "allow", "noproxy", "useragent", "username", "auth"]:
             self.cfg_str_init("proxy", name, val, callback, override)
         elif name in ["port", "gateway", "hostonly"]:
             self.cfg_int_init("proxy", name, val, callback, override)
@@ -778,20 +769,20 @@ class State:
                 cw_writable = os.access(cwd_ini, os.W_OK)
                 sp_writable = os.access(script_ini, os.W_OK)
 
-                if cw_exists and cw_writable: # CWD/px.ini
+                if cw_exists and cw_writable:  # CWD/px.ini
                     self.ini = cwd_ini
-                elif co_exists: # config/px.ini
+                elif co_exists:  # config/px.ini
                     self.ini = cfg_ini
-                elif sp_exists and sp_writable: # script_dir/px.ini
+                elif sp_exists and sp_writable:  # script_dir/px.ini
                     self.ini = script_ini
-                else: # Default config/px.ini
+                else:  # Default config/px.ini
                     self.ini = cfg_ini
             else:
-                if cw_exists: # CWD/px.ini
+                if cw_exists:  # CWD/px.ini
                     self.ini = cwd_ini
-                elif co_exists: # config/px.ini
+                elif co_exists:  # config/px.ini
                     self.ini = cfg_ini
-                elif sp_exists: # script_dir/px.ini
+                elif sp_exists:  # script_dir/px.ini
                     self.ini = script_ini
 
         # Load configuration file
@@ -831,8 +822,7 @@ class State:
 
         # Restore --log state if --debug | --verbose | --uniqlog specified
         if save_location != LOG_NONE:
-            self.cfg_int_init("settings", "log", str(
-                save_location), override=True)
+            self.cfg_int_init("settings", "log", str(save_location), override=True)
 
         ###
         # Dependency propagation
@@ -856,7 +846,7 @@ class State:
             dprint("Px will automatically restrict access to host interfaces")
 
             # If not gateway mode or gateway with default allow rules
-            if (self.gateway == 0 or (self.gateway == 1 and allow in ["*.*.*.*", "0.0.0.0/0"])):
+            if self.gateway == 0 or (self.gateway == 1 and allow in ["*.*.*.*", "0.0.0.0/0"]):
                 # Purge allow rules
                 self.cfg_init("allow", "", True)
                 dprint("Removing default 'allow' everyone rule")
@@ -866,7 +856,7 @@ class State:
 
         if sys.platform == "win32":
             if "--install" in sys.argv:
-                windows.install(get_script_cmd(), self.ini, '--force' in sys.argv)
+                windows.install(get_script_cmd(), self.ini, "--force" in sys.argv)
             elif "--uninstall" in sys.argv:
                 windows.uninstall()
 
@@ -883,6 +873,12 @@ class State:
             self.set_password()
         elif "--client-password" in sys.argv:
             self.set_client_password()
+
+        ###
+        # Setup plaintext keyring if PX_KEYRING_PLAINTEXT is set
+        # This allows tests and other environments to use a shared file-based keyring
+        if os.environ.get("PX_KEYRING_PLAINTEXT") == "1":
+            keyring.set_keyring(keyrings.alt.file.PlaintextKeyring())
 
         ###
         # Discover proxy info from OS
@@ -905,8 +901,7 @@ class State:
         self.state_lock.acquire()
         try:
             # Check if need to refresh
-            if (self.proxy_last_reload is not None and
-                    time.time() - self.proxy_last_reload < self.proxyreload):
+            if self.proxy_last_reload is not None and time.time() - self.proxy_last_reload < self.proxyreload:
                 dprint("Skip proxy refresh")
                 return
 
@@ -915,12 +910,16 @@ class State:
 
             servers = wproxy.parse_proxy(self.config.get("proxy", "server"))
             if len(servers) != 0:
-                self.wproxy = wproxy.Wproxy(
-                    wproxy.MODE_CONFIG, servers, noproxy=self.noproxy, debug_print=dprint)
+                self.wproxy = wproxy.Wproxy(wproxy.MODE_CONFIG, servers, noproxy=self.noproxy, debug_print=dprint)
             elif len(self.pac) != 0:
                 pac_encoding = self.config.get("proxy", "pac_encoding")
-                self.wproxy = wproxy.Wproxy(wproxy.MODE_CONFIG_PAC, [
-                                            self.pac], noproxy=self.noproxy, pac_encoding=pac_encoding, debug_print=dprint)
+                self.wproxy = wproxy.Wproxy(
+                    wproxy.MODE_CONFIG_PAC,
+                    [self.pac],
+                    noproxy=self.noproxy,
+                    pac_encoding=pac_encoding,
+                    debug_print=dprint,
+                )
             else:
                 self.wproxy = wproxy.Wproxy(noproxy=self.noproxy, debug_print=dprint)
 

@@ -1,4 +1,3 @@
-
 from fixtures import *
 from helpers import *
 
@@ -18,27 +17,31 @@ def test_proxy_auth(px_basic_cli, px_auth, px_username, px_password, tmp_path):
     # px basic cli = 6
     # px auth = 6
     # 36 combinations
-    cmd = f"{px_basic_cli} {px_auth} {px_username}"
+    cmd = f"{px_basic_cli} {px_auth} {px_username} {px_password}"
     run_in_temp(cmd, tmp_path)
 
 
-def test_proxy_auth_upstream(px_upstream, px_basic_cli, px_port, px_auth, px_username, px_password, px_test_auth, tmp_path):
+@pytest.mark.skipif(os.getenv("PX_CI_MINIMAL") == "1", reason="Skip slow chain tests in minimal CI mode")
+def test_proxy_auth_upstream(
+    px_upstream, px_basic_cli, px_port, px_auth, px_username, px_password, px_test_auth, tmp_path
+):
     # Px (test?auth) -> Px (auth?) -> Px upstream (client auth) -> httpbin
     # px basic cli = 6
     # px auth = 6
     # px test-auth = 2
     # 72 combinations
-    cmd = f"{px_basic_cli} {px_auth} {px_username}" + \
-        f" --proxy=127.0.0.1:{px_port+1} {px_test_auth}"
+    cmd = f"{px_basic_cli} {px_auth} {px_username} {px_password}" + f" --proxy=127.0.0.1:{px_port + 1} {px_test_auth}"
     run_in_temp(cmd, tmp_path, px_upstream)
 
 
-def test_proxy_auth_chain(px_upstream, px_chain, px_basic_cli, px_port, px_auth, px_username, px_password, px_test_auth, tmp_path):
+@pytest.mark.skipif(os.getenv("PX_CI_MINIMAL") == "1", reason="Skip slow chain tests in minimal CI mode")
+def test_proxy_auth_chain(
+    px_upstream, px_chain, px_basic_cli, px_port, px_auth, px_username, px_password, px_test_auth, tmp_path
+):
     # Px (test?auth) -> Px (auth?) -> Px chain (no auth) -> Px upstream (client auth) -> httpbin
     # px basic cli = 6
     # px auth = 6
     # px test-auth = 2
     # 72 combinations
-    cmd = f"{px_basic_cli} {px_auth} {px_username}" + \
-        f" --proxy=127.0.0.1:{px_port+2} {px_test_auth}"
+    cmd = f"{px_basic_cli} {px_auth} {px_username} {px_password}" + f" --proxy=127.0.0.1:{px_port + 2} {px_test_auth}"
     run_in_temp(cmd, tmp_path, px_upstream, px_chain)

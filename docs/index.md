@@ -9,15 +9,15 @@ proxy servers using Windows SSPI or configured credentials.
 | File | Description |
 |------|-------------|
 | [installation.md](installation.md) | Install via pip, wheels, binary, Docker, scoop; uninstallation |
-| [usage.md](usage.md) | Configuration, credentials, client auth, examples, dependencies, limitations |
+| [usage.md](usage.md) | Credentials, client auth, examples, dependencies, limitations |
+| [configuration.md](configuration.md) | All CLI flags, environment variables, INI keys, auth types |
 
 ## Developer documentation
 
 | File | Description |
 |------|-------------|
-| [architecture.md](architecture.md) | Runtime model, package layout, authentication, proxy discovery |
-| [build.md](build.md) | Build system: `pyproject.toml`, `build.sh`, wheels, Nuitka, Docker |
-| [configuration.md](configuration.md) | Configuration internals: sources, `State` singleton, option reference |
+| [architecture.md](architecture.md) | Runtime model, package layout, data flow, state management |
+| [build.md](build.md) | Build system: `pyproject.toml`, GitHub Actions, wheels, Nuitka, Docker |
 | [testing.md](testing.md) | Test suite layout, running tests, fixtures, coverage |
 | [changelog.md](changelog.md) | Release history |
 

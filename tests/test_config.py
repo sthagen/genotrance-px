@@ -10,29 +10,154 @@ from helpers import *
 
 from px import config
 
+# -------------------------------------------------------------------
+# Unit tests for utility functions
+# -------------------------------------------------------------------
 
-@pytest.mark.parametrize("location, expected", [
-    (config.LOG_NONE, None),
-    (config.LOG_SCRIPTDIR, config.get_script_dir()),
-    (config.LOG_CWD, os.getcwd()),
-    (config.LOG_UNIQLOG, os.getcwd()),
-    (config.LOG_STDOUT, sys.stdout),
-])
-def test_get_logfile(location, expected):
-    result = config.get_logfile(location)
-    if isinstance(result, str):
-        result = os.path.dirname(result)
-    assert expected == result
+
+class TestGetLogfile:
+    @pytest.mark.parametrize(
+        "location, expected",
+        [
+            (config.LOG_NONE, None),
+            (config.LOG_SCRIPTDIR, config.get_script_dir()),
+            (config.LOG_CWD, os.getcwd()),
+            (config.LOG_UNIQLOG, os.getcwd()),
+            (config.LOG_STDOUT, sys.stdout),
+        ],
+    )
+    def test_get_logfile(self, location, expected):
+        result = config.get_logfile(location)
+        if isinstance(result, str):
+            result = os.path.dirname(result)
+        assert expected == result
+
+
+class TestGetConfigDir:
+    def test_returns_platform_path(self):
+        result = config.get_config_dir()
+        assert result.endswith("px")
+        assert os.path.isabs(result)
+
+    def test_linux_path(self, monkeypatch):
+        if sys.platform == "win32":
+            pytest.skip("Linux-only test")
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        result = config.get_config_dir()
+        assert ".config/px" in result
+
+    def test_linux_xdg_override(self, monkeypatch, tmp_path):
+        if sys.platform == "win32":
+            pytest.skip("Linux-only test")
+        monkeypatch.setattr(sys, "platform", "linux")
+        custom = str(tmp_path / "custom_config")
+        monkeypatch.setenv("XDG_CONFIG_HOME", custom)
+        result = config.get_config_dir()
+        assert result == os.path.join(custom, "px")
+
+
+class TestFileUrlToLocalPath:
+    def test_unix_path(self):
+        result = config.file_url_to_local_path("file:///etc/proxy.pac")
+        assert result is not None
+        assert "proxy.pac" in result
+
+    def test_windows_drive_path(self):
+        result = config.file_url_to_local_path("file:///C:/Users/test/proxy.pac")
+        assert result is not None
+        assert "proxy.pac" in result
+
+
+class TestGetHostIps:
+    def test_returns_non_empty(self):
+        ips = config.get_host_ips()
+        assert ips.size > 0
+
+    def test_contains_localhost(self):
+        ips = config.get_host_ips()
+        assert "127.0.0.1" in ips
+
+
+class TestDefaults:
+    def test_defaults_has_required_keys(self):
+        required_keys = [
+            "server",
+            "pac",
+            "port",
+            "listen",
+            "gateway",
+            "hostonly",
+            "allow",
+            "noproxy",
+            "username",
+            "auth",
+            "workers",
+            "threads",
+            "idle",
+            "socktimeout",
+            "proxyreload",
+            "foreground",
+            "log",
+        ]
+        for key in required_keys:
+            assert key in config.DEFAULTS, f"Missing default for {key}"
+
+    def test_default_port(self):
+        assert config.DEFAULTS["port"] == "3128"
+
+    def test_default_listen(self):
+        assert config.DEFAULTS["listen"] == "127.0.0.1"
+
+    def test_default_workers(self):
+        assert config.DEFAULTS["workers"] == "2"
+
+    def test_default_threads(self):
+        assert config.DEFAULTS["threads"] == "32"
+
+
+class TestIsCompiled:
+    def test_not_compiled_in_test(self):
+        # Running tests from source, should not be compiled
+        assert config.is_compiled() is False
+
+
+class TestGetScriptCmd:
+    def test_returns_string(self):
+        cmd = config.get_script_cmd()
+        assert isinstance(cmd, str)
+        assert len(cmd) > 0
+
+
+# -------------------------------------------------------------------
+# Legacy parametrized test (kept as-is)
+# -------------------------------------------------------------------
 
 
 def generate_config():
     values = []
     for key in [
-        "allow", "auth", "client_auth", "client_nosspi",
-        "client_username", "foreground", "gateway", "hostonly",
-        "idle", "log", "noproxy", "pac", "pac_encoding",
-        "port", "proxyreload", "server", "socktimeout", "threads",
-        "username", "useragent", "workers"
+        "allow",
+        "auth",
+        "client_auth",
+        "client_nosspi",
+        "client_username",
+        "foreground",
+        "gateway",
+        "hostonly",
+        "idle",
+        "log",
+        "noproxy",
+        "pac",
+        "pac_encoding",
+        "port",
+        "proxyreload",
+        "server",
+        "socktimeout",
+        "threads",
+        "username",
+        "useragent",
+        "workers",
     ]:
         if key == "port":
             value = 3131
@@ -70,9 +195,11 @@ def config_setup(cmd, px_bin, pxini_location, monkeypatch, tmp_path):
     backup = False
     env = copy.deepcopy(os.environ)
 
+    # Always chdir to tmp_path to avoid parallel test interference
+    monkeypatch.chdir(str(tmp_path))
+
     # cwd, config, script_dir, custom location for px.ini
     if pxini_location == "cwd":
-        monkeypatch.chdir(str(tmp_path))
         pxini_path = os.path.join(tmp_path, "px.ini")
     elif pxini_location == "config":
         env["HOME"] = str(tmp_path)
@@ -80,13 +207,21 @@ def config_setup(cmd, px_bin, pxini_location, monkeypatch, tmp_path):
             env["APPDATA"] = str(tmp_path)
             pxini_path = os.path.join(tmp_path, "px", "px.ini")
         elif sys.platform == "darwin":
-            pxini_path = os.path.join(
-                tmp_path, "Library", "Application Support", "px", "px.ini")
+            pxini_path = os.path.join(tmp_path, "Library", "Application Support", "px", "px.ini")
         else:
+            # Set XDG_CONFIG_HOME explicitly — GH runners may have it set globally
+            env["XDG_CONFIG_HOME"] = os.path.join(str(tmp_path), ".config")
             pxini_path = os.path.join(tmp_path, ".config", "px", "px.ini")
     elif pxini_location == "script_dir":
         dirname = os.path.dirname(shutil.which(px_bin))
         pxini_path = os.path.join(dirname, "px.ini")
+
+        # Prevent config dir from shadowing script_dir discovery
+        env["HOME"] = str(tmp_path)
+        if sys.platform == "win32":
+            env["APPDATA"] = str(tmp_path)
+        elif sys.platform != "darwin":
+            env["XDG_CONFIG_HOME"] = os.path.join(str(tmp_path), ".config")
 
         # Backup px.ini for binary test
         if px_bin != "px" and os.path.exists(pxini_path):
@@ -118,12 +253,10 @@ def _test_save(px_bin, pxini_location, monkeypatch, tmp_path):
     values = generate_config()
 
     # Setup config
-    backup, cmd, env, pxini_path = config_setup(
-        cmd, px_bin, pxini_location, monkeypatch, tmp_path)
+    backup, cmd, env, pxini_path = config_setup(cmd, px_bin, pxini_location, monkeypatch, tmp_path)
 
     # File has to exist for --save to use it
-    assert not os.path.exists(
-        pxini_path), f"px.ini already exists at {pxini_path}"
+    assert not os.path.exists(pxini_path), f"px.ini already exists at {pxini_path}"
     touch(pxini_path)
 
     # Add all config CLI flags and run
@@ -136,6 +269,7 @@ def _test_save(px_bin, pxini_location, monkeypatch, tmp_path):
 
     # Load generated file
     assert os.path.exists(pxini_path), f"px.ini not found at {pxini_path}"
+    ini_content = open(pxini_path).read()
     config = configparser.ConfigParser()
     config.read(pxini_path)
 
@@ -151,22 +285,29 @@ def _test_save(px_bin, pxini_location, monkeypatch, tmp_path):
         elif config.has_section("settings") and config.has_option("settings", name):
             assert config.get("settings", name) == str(value)
         else:
-            assert False, f"Unknown key: {name}"
+            assert False, f"Unknown key: {name} in {pxini_path}\n{ini_content}"
+
+
+def _px_w_variant(px_bin):
+    """Get the windowless variant: px -> pxw, px.exe -> pxw.exe"""
+    if px_bin.lower().endswith(".exe"):
+        dirname = os.path.dirname(px_bin)
+        return os.path.join(dirname, "pxw.exe")
+    return px_bin + "w"
 
 
 def test_save(px_bin, pxini_location, monkeypatch, tmp_path):
     if sys.platform != "win32":
         _test_save(px_bin, pxini_location, monkeypatch, tmp_path)
     else:
-        for i in ["", "w"]:
-            _test_save(px_bin + i, pxini_location, monkeypatch, tmp_path)
+        for variant in [px_bin, _px_w_variant(px_bin)]:
+            _test_save(variant, pxini_location, monkeypatch, tmp_path)
 
 
 def _test_install(px_bin, pxini_location, monkeypatch, tmp_path_factory, tmp_path):
     # Setup config
     cmd = ""
-    backup, _, env, pxini_path = config_setup(
-        cmd, px_bin, pxini_location, monkeypatch, tmp_path)
+    backup, _, env, pxini_path = config_setup(cmd, px_bin, pxini_location, monkeypatch, tmp_path)
 
     # Setup mocks
     mock_OpenKey = unittest.mock.Mock(return_value="runkey")
@@ -177,6 +318,7 @@ def _test_install(px_bin, pxini_location, monkeypatch, tmp_path_factory, tmp_pat
 
     # Patch winreg
     import winreg
+
     monkeypatch.setattr(winreg, "OpenKey", mock_OpenKey)
     monkeypatch.setattr(winreg, "QueryValueEx", mock_QueryValueEx)
     monkeypatch.setattr(winreg, "SetValueEx", mock_SetValueEx)
@@ -189,6 +331,7 @@ def _test_install(px_bin, pxini_location, monkeypatch, tmp_path_factory, tmp_pat
     dirname = os.path.dirname(px_bin_full)
     try:
         from px import windows
+
         windows.install(px_bin_full, pxini_path, False)
     except SystemExit:
         pass
@@ -204,5 +347,5 @@ def test_install(px_bin, pxini_location, monkeypatch, tmp_path_factory, tmp_path
     if sys.platform != "win32":
         pytest.skip("Windows only test")
 
-    for i in ["", "w"]:
-        _test_install(px_bin + i, pxini_location, monkeypatch, tmp_path_factory, tmp_path)
+    for variant in [px_bin, _px_w_variant(px_bin)]:
+        _test_install(variant, pxini_location, monkeypatch, tmp_path_factory, tmp_path)

@@ -93,9 +93,7 @@ def run_px(name, port, tmp_path_factory, flags, env=None):
 
     tmp_path = tmp_path_factory.mktemp(f"{name}-{port}")
     buffer = open(f"{tmp_path}{os.sep}{name}-{port}.log", "w+")
-    subp = subprocess.Popen(
-        cmd, shell=True, stdout=buffer, stderr=buffer, env=env, cwd=tmp_path
-    )
+    subp = subprocess.Popen(cmd, shell=True, stdout=buffer, stderr=buffer, env=env, cwd=tmp_path)
 
     assert is_px_running(port), f"{name} Px didn't start @ {port}"
     time.sleep(0.5)
@@ -114,6 +112,11 @@ def print_buffer(buffer):
 
 
 def run_in_temp(cmd, tmp_path, upstream_buffer=None, chain_buffer=None):
+    # Explicit config path prevents auto-discovery of stray px.ini files
+    ini_path = os.path.join(tmp_path, "px.ini")
+    if not os.path.exists(ini_path):
+        open(ini_path, "w").close()
+    cmd += f" --config={ini_path}"
     px_print_env(cmd)
     with change_dir(tmp_path):
         ret = os.system(cmd)

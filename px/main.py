@@ -35,7 +35,7 @@ class PoolMixIn(socketserver.ThreadingMixIn):
         self.pool.submit(self.process_request_thread, request, client_address)
 
     def verify_request(self, request, client_address):
-        dprint("Client address: %s" % client_address[0])
+        dprint(f"Client address: {client_address[0]}")
         if client_address[0] in STATE.allow:
             return True
 
@@ -43,7 +43,7 @@ class PoolMixIn(socketserver.ThreadingMixIn):
             dprint("Host-only IP allowed")
             return True
 
-        dprint("Client not allowed: %s" % client_address[0])
+        dprint(f"Client not allowed: {client_address[0]}")
         return False
 
 
@@ -51,24 +51,20 @@ class ThreadedTCPServer(PoolMixIn, socketserver.TCPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, server_address, RequestHandlerClass,
-                 bind_and_activate=True):
-        socketserver.TCPServer.__init__(self, server_address,
-                                        RequestHandlerClass, bind_and_activate)
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
+        socketserver.TCPServer.__init__(self, server_address, RequestHandlerClass, bind_and_activate)
 
         try:
             # Workaround bad thread naming code in Python 3.6+, fixed in master
             self.pool = concurrent.futures.ThreadPoolExecutor(
-                max_workers=STATE.config.getint("settings", "threads"),
-                thread_name_prefix="Thread")
+                max_workers=STATE.config.getint("settings", "threads"), thread_name_prefix="Thread"
+            )
         except:
-            self.pool = concurrent.futures.ThreadPoolExecutor(
-                max_workers=STATE.config.getint("settings", "threads"))
+            self.pool = concurrent.futures.ThreadPoolExecutor(max_workers=STATE.config.getint("settings", "threads"))
 
 
 def print_banner(listen, port):
-    pprint(f"Serving at {listen}:{port} proc " +
-           multiprocessing.current_process().name)
+    pprint(f"Serving at {listen}:{port} proc " + multiprocessing.current_process().name)
 
     if sys.platform == "win32":
         if config.is_compiled() or "pythonw.exe" in sys.executable:
@@ -78,8 +74,7 @@ def print_banner(listen, port):
     dprint(f"Px v{__version__}")
     for section in STATE.config.sections():
         for option in STATE.config.options(section):
-            dprint(section + ":" + option + " = " + STATE.config.get(
-                section, option))
+            dprint(section + ":" + option + " = " + STATE.config.get(section, option))
 
 
 def serve_forever(httpd):
@@ -112,8 +107,7 @@ def start_worker(pipeout):
             mainsock = socket.fromshare(mainsock)
 
         # Start server but use socket from parent process
-        httpd = ThreadedTCPServer(
-            (listen, port), handler.PxHandler, bind_and_activate=False)
+        httpd = ThreadedTCPServer((listen, port), handler.PxHandler, bind_and_activate=False)
         httpd.socket = mainsock
 
         httpds.append(httpd)
@@ -157,10 +151,9 @@ def run_pool():
             #
             # Linux shares all open FD with children since it uses fork()
             workers = STATE.config.getint("settings", "workers")
-            for _ in range(workers-1):
+            for _ in range(workers - 1):
                 (pipeout, pipein) = multiprocessing.Pipe()
-                p = multiprocessing.Process(
-                    target=start_worker, args=(pipeout,))
+                p = multiprocessing.Process(target=start_worker, args=(pipeout,))
                 p.daemon = True
                 p.start()
                 while p.pid is None:
@@ -175,6 +168,7 @@ def run_pool():
                         pipein.send(mainsock)
 
     start_httpds(httpds)
+
 
 ###
 # Actions
@@ -240,12 +234,10 @@ def test(testurl):
             if check:
                 # Tests against httpbin
                 if url not in ret_data:
-                    pprint("Failed: response does not contain " +
-                           f"{url}:\n{ret_data}")
+                    pprint("Failed: response does not contain " + f"{url}:\n{ret_data}")
                     os._exit(config.ERROR_TEST)
                 if data is not None and data not in ret_data:
-                    pprint("Failed: response does not match " +
-                           f"{data}:\n{ret_data}")
+                    pprint("Failed: response does not match " + f"{data}:\n{ret_data}")
                     os._exit(config.ERROR_TEST)
 
         if quit:
@@ -278,10 +270,8 @@ def test(testurl):
 
         for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
             for url in urls:
-                data = str(uuid.uuid4()) if method in [
-                    "POST", "PUT", "PATCH"] else None
-                query(url + method.lower(), method, data, quit=False,
-                      check=True, insecure=insecure)
+                data = str(uuid.uuid4()) if method in ["POST", "PUT", "PATCH"] else None
+                query(url + method.lower(), method, data, quit=False, check=True, insecure=insecure)
 
         os._exit(config.ERROR_SUCCESS)
 
@@ -296,16 +286,15 @@ def test(testurl):
     # Run Px to respond to query
     run_pool()
 
+
 ###
 # Exit related
 
 
 def handle_exceptions(extype, value, tb):
     # Create traceback log
-    lst = (traceback.format_tb(tb, None) +
-           traceback.format_exception_only(extype, value))
-    tracelog = '\nTraceback (most recent call last):\n' + "%-20s%s\n" % (
-        "".join(lst[:-1]), lst[-1])
+    lst = traceback.format_tb(tb, None) + traceback.format_exception_only(extype, value)
+    tracelog = "\nTraceback (most recent call last):\n" + f"{''.join(lst[:-1]):<20}{lst[-1]}\n"
 
     if STATE.debug is not None:
         pprint(tracelog)
@@ -313,8 +302,9 @@ def handle_exceptions(extype, value, tb):
         sys.stderr.write(tracelog)
 
         # Save to debug.log in working directory
-        with open(config.get_logfile(config.LOG_CWD), 'w') as dbg:
+        with open(config.get_logfile(config.LOG_CWD), "w") as dbg:
             dbg.write(tracelog)
+
 
 ###
 # Startup

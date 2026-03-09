@@ -1,7 +1,7 @@
 .PHONY: install
 install: ## Install the virtual environment and pre-commit hooks
 	@uv sync
-	@uv pip install -e .
+	@uv pip install -e . -f mcurllib
 	@uv run python -m pre_commit install
 
 .PHONY: check
@@ -11,7 +11,7 @@ check: ## Run code quality tools
 
 .PHONY: test
 test: ## Run the test suite with coverage
-	@uv run python -m pytest tests --cov --cov-config=pyproject.toml --cov-report=xml
+	@uv run python -m pytest tests -n 4 --cov --cov-config=pyproject.toml --cov-report=xml
 
 .PHONY: build
 build: clean ## Build sdist and wheel

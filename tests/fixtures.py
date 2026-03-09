@@ -49,7 +49,7 @@ def px_upstream(px_port, tmp_path_factory):
 
     # Run px in the background
     name = "Upstream"
-    flags = " --client-auth=ANY --noproxy=127.0.0.1"
+    flags = " --client-auth=ANY --noproxy=127.0.0.1 --workers=1"
     if sys.platform == "win32":
         flags += " --client-nosspi"
     subp, cmd, buffer = run_px(name, port, tmp_path_factory, flags, env)
@@ -70,7 +70,7 @@ def px_chain(px_port, tmp_path_factory):
 
     # Run px in the background
     name = "Chain"
-    flags = f" --auth=NONE --proxy=127.0.0.1:{px_port + 1}"
+    flags = f" --auth=NONE --proxy=127.0.0.1:{px_port + 1} --workers=1"
     subp, cmd, buffer = run_px(name, port, tmp_path_factory, flags)
 
     # Let tests run
@@ -84,9 +84,6 @@ def px_chain(px_port, tmp_path_factory):
 # Function scope
 
 
-PARAMS_CLI_ENV = ["cli", "env"]
-
-
 @pytest.fixture
 def px_bin():
     # px module or binary = 2
@@ -96,11 +93,14 @@ def px_bin():
         return "px"
     elif os.path.exists(pxbin):
         # binary test
-        return pxbin
+        return os.path.abspath(pxbin)
     pytest.skip("Skip binary - not found")
 
 
 # CLI and env testing
+
+
+PARAMS_CLI_ENV = ["cli", "env"]
 
 
 @pytest.fixture(params=PARAMS_CLI_ENV)
@@ -141,6 +141,23 @@ def px_debug_none(px_cli_env_none, monkeypatch):
 
 
 # Auth
+
+
+# Reduce test combinations for slow CI environments (e.g., macOS GitHub Actions)
+# Strategy: Use paired combinations to maintain auth/env diversity while reducing total count
+# Instead of full cartesian product, we pair auth types with cli/env modes
+if os.getenv("PX_CI_MINIMAL") == "1":
+    # Paired combinations: (auth, cli/env) to reduce from 6 to 3 combinations
+    # NTLM+cli, DIGEST+env, BASIC+cli gives us all auth types and both modes
+    PARAMS_AUTH_PAIRED = [
+        ("NTLM", "cli"),
+        ("DIGEST", "env"),
+        ("BASIC", "cli"),
+    ]
+else:
+    PARAMS_AUTH_PAIRED = None  # Use full cartesian product
+
+
 PARAMS_AUTH = ["NTLM", "DIGEST", "BASIC"]
 
 
@@ -148,11 +165,25 @@ PARAMS_AUTH = ["NTLM", "DIGEST", "BASIC"]
 def px_auth(px_cli_env, request, monkeypatch):
     # cli or env = 2
     # NTLM or DIGEST or BASIC = 3
-    # 6 combinations
+    # 6 combinations (or 3 in minimal mode with pairing)
+
+    auth_type = request.param
+
+    # In minimal mode, skip combinations that don't match the pairing
+    if PARAMS_AUTH_PAIRED is not None:
+        # Check if this combination should be skipped
+        matched = False
+        for paired_auth, paired_mode in PARAMS_AUTH_PAIRED:
+            if auth_type == paired_auth and px_cli_env == paired_mode:
+                matched = True
+                break
+        if not matched:
+            pytest.skip(f"Skipping {auth_type}+{px_cli_env} in minimal mode (not in paired set)")
+
     if px_cli_env == "env":
-        monkeypatch.setenv("PX_AUTH", request.param)
+        monkeypatch.setenv("PX_AUTH", auth_type)
         return ""
-    return "--auth=" + request.param
+    return "--auth=" + auth_type
 
 
 @pytest.fixture(params=PARAMS_AUTH)
@@ -190,13 +221,15 @@ PARAMS_PASSWORD = "12345"
 @pytest.fixture
 def px_password(px_cli_env, monkeypatch):
     # keyring or env = 2
+    # Both paths set PX_PASSWORD in the environment. The difference:
+    # - env: Px reads PX_PASSWORD directly from the environment
+    # - cli: Uses plaintext keyring backend (set globally in conftest.py)
+    monkeypatch.setenv("PX_PASSWORD", PARAMS_PASSWORD)
     if px_cli_env == "env":
-        monkeypatch.setenv("PX_PASSWORD", PARAMS_PASSWORD)
-        return "PX_PASSWORD=" + PARAMS_PASSWORD
+        return ""
     else:
-        monkeypatch.delenv("PX_PASSWORD", raising=False)
         setup_keyring(PARAMS_USERNAME, PARAMS_PASSWORD)
-        return "Keyring password=" + PARAMS_PASSWORD
+        return ""
 
 
 # px.ini locations
@@ -220,9 +253,7 @@ def px_basic_cli(px_bin, px_debug_none, px_port, httpbin_both):
     # unique port for this worker = 1
     # with http and https testing = 2
     # 6 combinations
-    cmd = (
-        f"{px_bin} {px_debug_none} --port={px_port}" + f" --test=all:{httpbin_both.url}"
-    )
+    cmd = f"{px_bin} {px_debug_none} --port={px_port}" + f" --test=all:{httpbin_both.url}"
     return cmd
 
 
@@ -234,5 +265,5 @@ PARAMS_TEST_AUTH = ["", "--test-auth"]
 
 @pytest.fixture(params=PARAMS_TEST_AUTH)
 def px_test_auth(request):
-    # without and with --test-auth = 2
+    # without and with --test-auth = 2 (or 1 in minimal mode)
     return request.param

@@ -1,0 +1,282 @@
+name: Build
+
+on:
+  push:
+    branches: [master, devel]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build sdist and pure-Python wheel
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Build sdist and wheel
+        run: |
+          uv pip install build twine
+          uv run python tools.py --wheel
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: wheel/
+
+  # Build dependency wheels for each platform
+  # Platforms limited to intersection of pymcurl and quickjs-ng wheel availability
+  wheels:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            image: "quay.io/pypa/manylinux2014_x86_64"
+            name: linux-glibc-x86_64
+          #- os: ubuntu-latest
+          #  image: "quay.io/pypa/manylinux2014_aarch64"
+          #  name: linux-glibc-aarch64
+          #  qemu: true
+          - os: ubuntu-latest
+            image: "quay.io/pypa/musllinux_1_2_x86_64"
+            name: linux-musl-x86_64
+          #- os: ubuntu-latest
+          #  image: "quay.io/pypa/musllinux_1_2_aarch64"
+          #  name: linux-musl-aarch64
+          #  qemu: true
+          - os: macos-latest
+            name: mac-arm64
+          - os: windows-latest
+            name: windows-amd64
+
+    runs-on: ${{ matrix.os }}
+    name: wheels ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build wheels (Linux container)
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/px -w /px \
+            ${{ matrix.image }} /bin/bash -c '. /px/build.sh && build_wheels'
+
+      - name: Build wheels (macOS/Windows)
+        if: runner.os != 'Linux'
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: "3.14"
+
+      - name: Build wheels (macOS/Windows) - continue
+        if: runner.os != 'Linux'
+        shell: bash
+        run: . ./build.sh && build_wheels
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.name }}
+          path: wheels/
+
+  # Build Nuitka binaries (Linux/macOS) or embedded Python (Windows)
+  binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            image: "quay.io/pypa/manylinux2014_x86_64"
+            name: linux-glibc-x86_64
+          #- os: ubuntu-latest
+          #  image: "quay.io/pypa/manylinux2014_aarch64"
+          #  name: linux-glibc-aarch64
+          #  qemu: true
+          - os: ubuntu-latest
+            image: "alpine:3.21"
+            name: linux-musl-x86_64
+            alpine: true
+          #- os: ubuntu-latest
+          #  image: "alpine:3.21"
+          #  name: linux-musl-aarch64
+          #  alpine: true
+          #  qemu: true
+          - os: macos-latest
+            name: mac-arm64
+          - os: windows-latest
+            name: windows-amd64
+
+    runs-on: ${{ matrix.os }}
+    name: binary ${{ matrix.name }}
+    needs: [sdist, wheels]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up the environment
+        if: runner.os != 'Linux'
+        uses: ./.github/actions/setup-python-env
+
+      - name: Download wheels
+        uses: actions/download-artifact@v7
+        with:
+          name: wheels-${{ matrix.name }}
+          path: px.dist-${{ matrix.name }}-wheels/px.dist/
+
+      - name: Download sdist
+        uses: actions/download-artifact@v7
+        with:
+          name: sdist
+          path: wheel/
+
+      - name: Set up QEMU
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Build Nuitka binary (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          PLATFORM="${{ matrix.qemu && '--platform linux/arm64' || '' }}"
+          SHELL_BIN="${{ matrix.alpine && '/bin/sh' || '/bin/bash' }}"
+          docker run --rm -v ${{ github.workspace }}:/px -w /px \
+            $PLATFORM ${{ matrix.image }} $SHELL_BIN -c '. /px/build.sh && build_binary ${{ matrix.name }}'
+
+      - name: Build Nuitka binary (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: . ./build.sh && build_binary ${{ matrix.name }}
+
+      - name: Build embedded binary (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: . ./build.sh && build_binary ${{ matrix.name }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binary-${{ matrix.name }}
+          path: |
+            px.dist-*/px-v*
+
+  # Test built artifacts across distros
+  test-binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            container: "quay.io/pypa/musllinux_1_2_x86_64"
+            name: linux-musl-x86_64
+          - os: ubuntu-latest
+            container: ubuntu
+            name: linux-glibc-x86_64
+          - os: macos-latest
+            name: mac-arm64
+          - os: windows-latest
+            name: windows-amd64
+
+    runs-on: ${{ matrix.os }}
+    name: test-binary ${{ matrix.name }} ${{ matrix.container }}
+    needs: [binary]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: binary-${{ matrix.name }}
+          path: ./
+
+      - name: Extract archives
+        shell: bash
+        run: . ./build.sh && extract_archives ${{ matrix.name }}
+
+      - name: Set up the environment
+        if: runner.os != 'Linux'
+        uses: ./.github/actions/setup-python-env
+
+      - name: Test (Linux container)
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm --privileged \
+            -v ${{ github.workspace }}:/px -w /px \
+            ${{ matrix.container }} /bin/sh -c '. /px/build.sh && test_binary ${{ matrix.name }}'
+
+      - name: Test (macOS/Windows)
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          PX_CI_MINIMAL: ${{ runner.os == 'macOS' && '1' || '' }}
+        run: . ./build.sh && test_binary ${{ matrix.name }}
+
+  # Create GitHub release
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [test-binary]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all binary artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts/
+          pattern: binary-*
+
+      - name: Download sdist
+        uses: actions/download-artifact@v7
+        with:
+          name: sdist
+          path: artifacts/sdist/
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release
+          find artifacts/binary-* -name 'px-v*' -exec cp {} release/ \;
+          cp artifacts/sdist/*.tar.gz release/ || true
+          cp artifacts/sdist/*.whl release/ || true
+
+      - name: Extract release notes
+        run: python3 tools.py --history > /tmp/notes.md
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/notes.md
+          files: release/*
+          prerelease: true
+
+  # Publish sdist to PyPI
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [test-binary]
+    permissions:
+      id-token: write
+    environment: pypi
+
+    steps:
+      - name: Download sdist
+        uses: actions/download-artifact@v7
+        with:
+          name: sdist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

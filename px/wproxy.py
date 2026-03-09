@@ -24,17 +24,16 @@ MODE_ENV = 4
 MODE_CONFIG = 5
 MODE_CONFIG_PAC = 6
 
-MODES = [
-    "MODE_NONE", "MODE_AUTO", "MODE_PAC", "MODE_MANUAL",
-    "MODE_ENV", "MODE_CONFIG", "MODE_CONFIG_PAC"
-]
+MODES = ["MODE_NONE", "MODE_AUTO", "MODE_PAC", "MODE_MANUAL", "MODE_ENV", "MODE_CONFIG", "MODE_CONFIG_PAC"]
 
 # Direct proxy connection
 DIRECT = ("DIRECT", 80)
 
+
 # Debug shortcut
 def dprint(_):
     pass
+
 
 def parse_proxy(proxystrs):
     """
@@ -65,7 +64,8 @@ def parse_proxy(proxystrs):
 
     return servers
 
-def parse_noproxy(noproxystr, iponly = False):
+
+def parse_noproxy(noproxystr, iponly=False):
     """
     Convert comma/semicolon separated noproxy list of IP1,IP2,host1,host2 and returns two
     lists: one with IP addresses and ranges, second with hostnames
@@ -78,7 +78,7 @@ def parse_noproxy(noproxystr, iponly = False):
     if noproxystr is None or len(noproxystr) == 0:
         return noproxy, noproxy_hosts
 
-    bypasses = [h for h in noproxystr.lower().replace(' ', ',').replace(';', ',').split(',')]
+    bypasses = noproxystr.lower().replace(" ", ",").replace(";", ",").split(",")
     for bypass in bypasses:
         if len(bypass) == 0:
             continue
@@ -92,7 +92,7 @@ def parse_noproxy(noproxystr, iponly = False):
             else:
                 ipns = netaddr.IPNetwork(bypass)
             noproxy.add(ipns)
-        except Exception as error:
+        except Exception:
             if not iponly:
                 if bypass == "<local>":
                     # TODO: detect all intranet addresses
@@ -105,11 +105,12 @@ def parse_noproxy(noproxystr, iponly = False):
                 else:
                     noproxy_hosts.add(bypass)
             else:
-                dprint("Bad IP definition: %s" % bypass)
-                raise error
+                dprint(f"Bad IP definition: {bypass}")
+                raise
 
     dprint(str(noproxy_hosts))
     return noproxy, noproxy_hosts
+
 
 class _WproxyBase:
     """
@@ -132,7 +133,7 @@ class _WproxyBase:
     pac = None
     pac_encoding = None
 
-    def __init__(self, mode = MODE_NONE, servers = None, noproxy = None, pac_encoding = None, debug_print = None):
+    def __init__(self, mode=MODE_NONE, servers=None, noproxy=None, pac_encoding=None, debug_print=None):
         global dprint
         if debug_print is not None:
             dprint = debug_print
@@ -150,7 +151,7 @@ class _WproxyBase:
 
             if mode == MODE_CONFIG_PAC:
                 # Load PAC file
-                self.pac = Pac(self.servers[0], self.pac_encoding, debug_print = dprint)
+                self.pac = Pac(self.servers[0], self.pac_encoding, debug_print=dprint)
         else:
             # MODE_ENV
             proxy = urllib.request.getproxies()
@@ -190,7 +191,7 @@ class _WproxyBase:
         if parse.query:
             path = path + "?" + parse.query
 
-        dprint("netloc = %s, path = %s" % (netloc, path))
+        dprint(f"netloc = {netloc}, path = {path}")
 
         return netloc, path
 
@@ -226,7 +227,7 @@ class _WproxyBase:
         """
 
         if self.noproxy.size:
-            netloc, path = self.get_netloc(url)
+            netloc, _path = self.get_netloc(url)
             return self.check_noproxy_for_netloc(netloc)
 
     def find_proxy_for_url(self, url):
@@ -255,6 +256,7 @@ class _WproxyBase:
 
         return None, netloc, path
 
+
 if sys.platform == "win32":
     import ctypes
     import ctypes.wintypes
@@ -264,36 +266,39 @@ if sys.platform == "win32":
     #  6.2 = Windows 8
     #  6.3 = Windows 8.1
     # 10.0 = Windows 10
-    WIN_VERSION = float(
-        str(sys.getwindowsversion().major) + "." +
-        str(sys.getwindowsversion().minor))
+    WIN_VERSION = float(str(sys.getwindowsversion().major) + "." + str(sys.getwindowsversion().minor))
 
     class WINHTTP_CURRENT_USER_IE_PROXY_CONFIG(ctypes.Structure):
-        _fields_ = [("fAutoDetect", ctypes.wintypes.BOOL),
-                    # "Automatically detect settings"
-                    ("lpszAutoConfigUrl", ctypes.wintypes.LPWSTR),
-                    # "Use automatic configuration script, Address"
-                    ("lpszProxy", ctypes.wintypes.LPWSTR),
-                    # "1.2.3.4:5" if "Use the same proxy server for all protocols",
-                    # else advanced
-                    # "ftp=1.2.3.4:5;http=1.2.3.4:5;https=1.2.3.4:5;socks=1.2.3.4:5"
-                    ("lpszProxyBypass", ctypes.wintypes.LPWSTR),
-                    # ";"-separated list
-                    # "Bypass proxy server for local addresses" adds "<local>"
-                ]
+        _fields_ = [
+            ("fAutoDetect", ctypes.wintypes.BOOL),
+            # "Automatically detect settings"
+            ("lpszAutoConfigUrl", ctypes.wintypes.LPWSTR),
+            # "Use automatic configuration script, Address"
+            ("lpszProxy", ctypes.wintypes.LPWSTR),
+            # "1.2.3.4:5" if "Use the same proxy server for all protocols",
+            # else advanced
+            # "ftp=1.2.3.4:5;http=1.2.3.4:5;https=1.2.3.4:5;socks=1.2.3.4:5"
+            ("lpszProxyBypass", ctypes.wintypes.LPWSTR),
+            # ";"-separated list
+            # "Bypass proxy server for local addresses" adds "<local>"
+        ]
 
     class WINHTTP_AUTOPROXY_OPTIONS(ctypes.Structure):
-        _fields_ = [("dwFlags", ctypes.wintypes.DWORD),
-                    ("dwAutoDetectFlags", ctypes.wintypes.DWORD),
-                    ("lpszAutoConfigUrl", ctypes.wintypes.LPCWSTR),
-                    ("lpvReserved", ctypes.c_void_p),
-                    ("dwReserved", ctypes.wintypes.DWORD),
-                    ("fAutoLogonIfChallenged", ctypes.wintypes.BOOL), ]
+        _fields_ = [
+            ("dwFlags", ctypes.wintypes.DWORD),
+            ("dwAutoDetectFlags", ctypes.wintypes.DWORD),
+            ("lpszAutoConfigUrl", ctypes.wintypes.LPCWSTR),
+            ("lpvReserved", ctypes.c_void_p),
+            ("dwReserved", ctypes.wintypes.DWORD),
+            ("fAutoLogonIfChallenged", ctypes.wintypes.BOOL),
+        ]
 
     class WINHTTP_PROXY_INFO(ctypes.Structure):
-        _fields_ = [("dwAccessType", ctypes.wintypes.DWORD),
-                    ("lpszProxy", ctypes.wintypes.LPWSTR),
-                    ("lpszProxyBypass", ctypes.wintypes.LPWSTR), ]
+        _fields_ = [
+            ("dwAccessType", ctypes.wintypes.DWORD),
+            ("lpszProxy", ctypes.wintypes.LPWSTR),
+            ("lpszProxyBypass", ctypes.wintypes.LPWSTR),
+        ]
 
     # Parameters for WinHttpOpen, http://msdn.microsoft.com/en-us/library/aa384098(VS.85).aspx
     WINHTTP_NO_PROXY_NAME = 0
@@ -321,7 +326,7 @@ if sys.platform == "win32":
     class Wproxy(_WproxyBase):
         "Load proxy information from Windows Internet Options"
 
-        def __init__(self, mode = MODE_NONE, servers = None, noproxy = None, pac_encoding = None, debug_print = None):
+        def __init__(self, mode=MODE_NONE, servers=None, noproxy=None, pac_encoding=None, debug_print=None):
             """
             Load proxy information from Windows Internet Options
               Returns MODE_NONE, MODE_ENV, MODE_AUTO, MODE_PAC, MODE_MANUAL
@@ -346,10 +351,9 @@ if sys.platform == "win32":
                 # Get proxy info from Internet Options
                 #   MODE_AUTO, MODE_PAC or MODE_MANUAL
                 ie_proxy_config = WINHTTP_CURRENT_USER_IE_PROXY_CONFIG()
-                ok = ctypes.windll.winhttp.WinHttpGetIEProxyConfigForCurrentUser(
-                    ctypes.byref(ie_proxy_config))
+                ok = ctypes.windll.winhttp.WinHttpGetIEProxyConfigForCurrentUser(ctypes.byref(ie_proxy_config))
                 if not ok:
-                    dprint("WinHttpGetIEProxyConfigForCurrentUser failed: %s" % str(ctypes.GetLastError()))
+                    dprint(f"WinHttpGetIEProxyConfigForCurrentUser failed: {ctypes.GetLastError()}")
                 else:
                     # Load noproxy if specified
                     self.noproxy, self.noproxy_hosts = parse_noproxy(noproxy)
@@ -366,10 +370,9 @@ if sys.platform == "win32":
                         # Mode = Manual proxy
                         proxies = []
                         proxies_str = ie_proxy_config.lpszProxy or ""
-                        for proxy_str in proxies_str.lower().replace(
-                                ' ', ';').split(';'):
-                            if '=' in proxy_str:
-                                scheme, proxy = proxy_str.split('=', 1)
+                        for proxy_str in proxies_str.lower().replace(" ", ";").split(";"):
+                            if "=" in proxy_str:
+                                scheme, proxy = proxy_str.split("=", 1)
                                 if scheme.strip() != "ftp":
                                     proxies.append(proxy)
                             elif proxy_str:
@@ -386,7 +389,7 @@ if sys.platform == "win32":
 
             if self.mode == MODE_NONE:
                 # Get from environment since nothing in Internet Options
-                super().__init__(noproxy = noproxy)
+                super().__init__(noproxy=noproxy)
 
             dprint("Proxy mode = " + MODES[self.mode])
 
@@ -400,8 +403,11 @@ if sys.platform == "win32":
             ctypes.windll.winhttp.WinHttpOpen.restype = ctypes.c_void_p
             hInternet = ctypes.windll.winhttp.WinHttpOpen(
                 ctypes.wintypes.LPCWSTR("Px"),
-                ACCESS_TYPE, WINHTTP_NO_PROXY_NAME,
-                WINHTTP_NO_PROXY_BYPASS, WINHTTP_FLAG_ASYNC)
+                ACCESS_TYPE,
+                WINHTTP_NO_PROXY_NAME,
+                WINHTTP_NO_PROXY_BYPASS,
+                WINHTTP_FLAG_ASYNC,
+            )
             if not hInternet:
                 dprint("WinHttpOpen failed: " + str(ctypes.GetLastError()))
                 return ""
@@ -413,8 +419,7 @@ if sys.platform == "win32":
                 autoproxy_options.lpszAutoConfigUrl = self.servers[0]
             elif self.mode == MODE_AUTO:
                 autoproxy_options.dwFlags = WINHTTP_AUTOPROXY_AUTO_DETECT
-                autoproxy_options.dwAutoDetectFlags = (
-                    WINHTTP_AUTO_DETECT_TYPE_DHCP | WINHTTP_AUTO_DETECT_TYPE_DNS_A)
+                autoproxy_options.dwAutoDetectFlags = WINHTTP_AUTO_DETECT_TYPE_DHCP | WINHTTP_AUTO_DETECT_TYPE_DNS_A
                 autoproxy_options.lpszAutoConfigUrl = 0
             else:
                 dprint("winhttp_find_proxy_for_url only applicable for MODE_AUTO and MODE_PAC")
@@ -423,12 +428,15 @@ if sys.platform == "win32":
 
             proxy_info = WINHTTP_PROXY_INFO()
 
-            ctypes.windll.winhttp.WinHttpGetProxyForUrl.argtypes = [ctypes.c_void_p,
-                ctypes.wintypes.LPCWSTR, ctypes.POINTER(WINHTTP_AUTOPROXY_OPTIONS),
-                ctypes.POINTER(WINHTTP_PROXY_INFO)]
+            ctypes.windll.winhttp.WinHttpGetProxyForUrl.argtypes = [
+                ctypes.c_void_p,
+                ctypes.wintypes.LPCWSTR,
+                ctypes.POINTER(WINHTTP_AUTOPROXY_OPTIONS),
+                ctypes.POINTER(WINHTTP_PROXY_INFO),
+            ]
             ok = ctypes.windll.winhttp.WinHttpGetProxyForUrl(
-                hInternet, ctypes.wintypes.LPCWSTR(url),
-                ctypes.byref(autoproxy_options), ctypes.byref(proxy_info))
+                hInternet, ctypes.wintypes.LPCWSTR(url), ctypes.byref(autoproxy_options), ctypes.byref(proxy_info)
+            )
             if not ok:
                 error = ctypes.GetLastError()
                 if error == WINHTTP_ERROR_WINHTTP_UNABLE_TO_DOWNLOAD_SCRIPT:
@@ -438,7 +446,7 @@ if sys.platform == "win32":
                     dprint("Autodetection failed, trying DIRECT instead")
                     return "DIRECT"
                 else:
-                    dprint("WinHttpGetProxyForUrl failed: %s" % error)
+                    dprint(f"WinHttpGetProxyForUrl failed: {error}")
                     return ""
 
             if proxy_info.dwAccessType == WINHTTP_ACCESS_TYPE_NAMED_PROXY:
@@ -450,7 +458,7 @@ if sys.platform == "win32":
             elif proxy_info.dwAccessType == WINHTTP_ACCESS_TYPE_NO_PROXY:
                 return "DIRECT"
             else:
-                dprint("WinHttpGetProxyForUrl accesstype %s" % (proxy_info.dwAccessType))
+                dprint(f"WinHttpGetProxyForUrl accesstype {proxy_info.dwAccessType}")
                 return ""
 
             # TODO: WinHttpCloseHandle(), GlobalFree() on lpszProxy and lpszProxyBypass
@@ -471,10 +479,14 @@ if sys.platform == "win32":
             elif self.mode in [MODE_MANUAL]:
                 # Use specific proxies configured
                 return copy.deepcopy(self.servers), netloc, path
+
 else:
+
     class Wproxy(_WproxyBase):
         "Load proxy information from the operating system"
+
         pass
+
 
 if __name__ == "__main__":
     wp = Wproxy(debug_print=print)

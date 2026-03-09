@@ -9,16 +9,66 @@
 - Fixed #255 — handle Python v3.13 runtime context on startup.
 
 ### Improvements
-- Modernised project tooling: ruff, mypy, pre-commit, Makefile, `docs/` folder.
 - Replaced `quickjs` dependency with `quickjs-ng`.
 - Dropped Python 3.8 and 3.9 support; minimum is now Python 3.10.
 - Added Python 3.14 classifier.
+- Restructured `README.md` with basic install/config/usage info and full
+  `github.com` links (for PyPI/Docker Hub display).
+- Made `docs/configuration.md` a complete user-facing reference with all CLI
+  flags, environment variables, INI keys, defaults, and auth types.
+- Split detailed documentation into user-facing (`docs/installation.md`,
+  `docs/usage.md`, `docs/configuration.md`) and developer (`docs/architecture.md`,
+  `docs/build.md`, `docs/testing.md`) sections.
+
+### Internal
+- Modernised project tooling: ruff, mypy, pre-commit, Makefile, `docs/` folder.
+- Fixed build workflow: Linux musl Nuitka builds now use Alpine containers
+  (both x86_64 and aarch64) since musllinux containers lack Python dev headers
+  needed by Nuitka. Linux glibc builds use Python 3.13 from the manylinux
+  container (`/opt/python/cp313-cp313/`). All Linux container builds install
+  `uv` via curl consistently.
+- Fixed test-binary workflow: release archives from the binary job are now
+  extracted before testing. The `PXBIN` environment variable is now properly
+  exported to tox so the `binary` tox environment actually tests the compiled
+  Nuitka/embedded binary.
+- Resolved ruff violations in `px/` package — reduced suppressed rules to
+  minimal intentional set.
 - Ported `HISTORY.txt` to `docs/changelog.md` and removed the original file.
-- Restructured `README.md` as a slim overview; split user and developer docs into
-  `docs/installation.md`, `docs/usage.md`, `docs/architecture.md`, `docs/build.md`,
-  `docs/configuration.md`, and `docs/testing.md`.
-- Replaced `AGENTS.md` with concise agent guidelines; moved project documentation
-  into `docs/`.
+- Expanded `docs/architecture.md` with State singleton, request handling, spnego
+  monkey-patching, PAC evaluation, proxy reload, and error handling details.
+- Added `--test-keyring` flag and `InMemoryKeyring` backend so tests can
+  exercise the real keyring code path without a system keyring. When set, Px
+  seeds an in-memory keyring from `PX_PASSWORD`/`PX_CLIENT_PASSWORD` env vars
+  and then removes them, forcing the keyring read path.
+- Expanded pytest suite: added `test_debug.py`, `test_wproxy.py`, `test_pac.py`,
+  `test_network.py`; expanded `test_config.py` with unit tests for utility
+  functions and defaults. Deleted legacy `test.py`.
+- Updated tox configuration to run all test files.
+- Added `./mcurllib` as local wheel index to Makefile install for testing with
+  unreleased mcurl versions.
+- Cleaned up `tools.py`: removed obsolete functions (`get_curl`, `pyinstaller`,
+  `scoop`, and all GitHub API release management). Remaining targets are
+  `--wheel`, `--nuitka`, `--embed`, `--deps`, `--depspkg`, and `--docker`.
+- Removed old `build.sh` and `build.ps1` monolithic build scripts — replaced
+  by GitHub Actions workflows and the new `build.sh` function library.
+- Added GitHub Actions CI workflow (`ci.yml`) with quality checks and test
+  matrix across Python 3.10–3.14 (plus free-threaded 3.13t/3.14t) on
+  ubuntu, macos, and windows.
+- Added GitHub Actions build workflow (`build.yml`) for wheels, Nuitka/embedded
+  binaries, multi-distro testing, GitHub release posting, and PyPI publishing.
+  Platform matrix covers all targets where both `pymcurl` and `quickjs-ng`
+  provide wheels.
+- Added shared `.github/actions/setup-python-env` composite action.
+- Added `build.sh` as a shell function library sourced by `build.yml`. It
+  consolidates repeated CI scaffolding (uv installation, Python discovery,
+  wheel building, binary building, archive extraction, test execution) into
+  reusable functions, reducing `build.yml` from ~430 to ~280 lines.
+- Refactored `tools.py`: made `pymcurl` import lazy so the script can run
+  without it installed (guards in `curl()` and `nuitka()`). Added
+  `make_archive_with_hash()` helper to deduplicate archive+hash blocks.
+  Added `--history` flag to print the latest changelog section (used by the
+  release job). Made version import resilient with a `pyproject.toml`
+  fallback when `px-proxy` is not installed as a package.
 
 ---
 
@@ -299,7 +349,7 @@
 
 - Added noproxy feature.
 - Added `--threads` setting.
-- Added `test.py` for basic validation.
+- Added test script for basic validation.
 - Multiple bug fixes for connection handling and chunked encoding.
 
 ---

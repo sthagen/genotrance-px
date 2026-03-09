@@ -58,9 +58,7 @@ class Pac:
             return
 
         try:
-            self.pac_find_proxy_for_url = quickjs.Function(
-                "FindProxyForURL", PACUTILS + "\n\n" + text
-            )
+            self.pac_find_proxy_for_url = quickjs.Function("FindProxyForURL", PACUTILS + "\n\n" + text)
 
             # Load Python callables
             for func in [self.alert, self.dnsResolve, self.myIpAddress]:

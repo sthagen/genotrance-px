@@ -7,6 +7,7 @@ import http.server
 import os
 import sys
 import time
+import typing
 
 # External dependencies
 import keyring
@@ -18,7 +19,8 @@ from .debug import dprint, pprint
 
 try:
     import spnego._ntlm
-    from spnego._ntlm_raw.crypto import lmowfv1, ntowfv1, ntowfv2
+    import spnego._ntlm_raw.messages
+    from spnego._ntlm_raw.crypto import lmowfv1, ntowfv1
 except ImportError:
     pprint("Requires module pyspnego")
     sys.exit(config.ERROR_IMPORT)
@@ -39,8 +41,7 @@ def _get_credential(store, domain, username):
         nthash = ntowfv1(password)
         return domain, username, lmhash, nthash
 
-    raise spnego.exceptions.SpnegoError(
-        spnego.exceptions.ErrorCode.failure, "Bad credentials")
+    raise spnego.exceptions.SpnegoError(spnego.exceptions.ErrorCode.failure, "Bad credentials")
 
 
 spnego._ntlm._get_credential = _get_credential
@@ -115,6 +116,7 @@ def set_curl_auth(curl, auth):
         # for NTLM auth, multi interface does not guarantee this
         curl.is_easy = True
 
+
 ###
 # Proxy handler
 
@@ -126,7 +128,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
 
     # Contains the proxy servers responsible for the url this Proxy instance
     # (aka thread) serves
-    proxy_servers = []
+    proxy_servers: typing.ClassVar[list] = []
     curl = None
 
     def handle_one_request(self):
@@ -144,7 +146,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
             pass
 
     def address_string(self):
-        host, port = self.client_address[:2]
+        host, _port = self.client_address[:2]
         # return socket.getfqdn(host)
         return host
 
@@ -157,11 +159,9 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.curl is None:
-            self.curl = mcurl.Curl(
-                self.path, self.command, self.request_version, STATE.socktimeout)
+            self.curl = mcurl.Curl(self.path, self.command, self.request_version, STATE.socktimeout)
         else:
-            self.curl.reset(self.path, self.command,
-                            self.request_version, STATE.socktimeout)
+            self.curl.reset(self.path, self.command, self.request_version, STATE.socktimeout)
 
         dprint(self.curl.easyhash + ": Path = " + self.path)
         ipport = self.get_destination()
@@ -173,12 +173,10 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
             # since libcurl only supports CIDR addresses since v7.86 and does not support wildcards
             # (192.168.0.*) or ranges (192.168.0.1-192.168.0.255)
             noproxy_hosts = ",".join(STATE.wproxy.noproxy_hosts) or None
-            ret = self.curl.set_proxy(
-                proxy=server, port=port, noproxy=noproxy_hosts)
+            ret = self.curl.set_proxy(proxy=server, port=port, noproxy=noproxy_hosts)
             if not ret:
                 # Proxy server has had auth issues so returning failure to client
-                self.send_error(
-                    401, f"Proxy server authentication failed: {server}:{port}")
+                self.send_error(401, f"Proxy server authentication failed: {server}:{port}")
                 return
 
             # Set proxy authentication
@@ -201,10 +199,10 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
                     # POST / PUT / PATCH with Content-Length = 0
                     content_length = self.headers.get("Content-Length")
                     if content_length is not None and content_length == "0":
-                        dprint(self.curl.easyhash +
-                               ": Setting CURLOPT_KEEP_SENDING_ON_ERROR")
+                        dprint(self.curl.easyhash + ": Setting CURLOPT_KEEP_SENDING_ON_ERROR")
                         mcurl.libcurl.curl_easy_setopt(
-                            self.curl.easy, mcurl.libcurl.CURLOPT_KEEP_SENDING_ON_ERROR, mcurl.py2cbool(True))
+                            self.curl.easy, mcurl.libcurl.CURLOPT_KEEP_SENDING_ON_ERROR, mcurl.py2cbool(True)
+                        )
 
         # Set headers for request
         self.curl.set_headers(self.headers)
@@ -216,14 +214,12 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
         self.curl.set_useragent(STATE.useragent)
 
         if not STATE.mcurl.do(self.curl):
-            dprint(self.curl.easyhash +
-                   ": Connection failed: " + self.curl.errstr)
+            dprint(self.curl.easyhash + ": Connection failed: " + self.curl.errstr)
             self.send_error(self.curl.resp, self.curl.errstr)
         elif self.curl.is_connect:
             ret, used_proxy = self.curl.get_used_proxy()
             if ret != 0:
-                dprint(self.curl.easyhash +
-                       ": Failed to get used proxy: " + str(ret))
+                dprint(self.curl.easyhash + ": Failed to get used proxy: " + str(ret))
             elif self.curl.is_tunnel or not used_proxy:
                 # Inform client that SSL connection has been established
                 dprint(self.curl.easyhash + ": SSL connected")
@@ -239,10 +235,13 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
         "Handle quit request - client has to be host"
         hostips = config.get_host_ips()
         for listen in STATE.listen:
-            if ((len(listen) == 0 and self.client_address[0] in hostips) or
-                    # client address matches any hostip since --hostonly or --gateway
-                    (self.client_address[0] == listen)):
-                    # client address matches --listen
+            if (
+                (len(listen) == 0 and self.client_address[0] in hostips)
+                or
+                # client address matches any hostip since --hostonly or --gateway
+                (self.client_address[0] == listen)
+            ):
+                # client address matches --listen
                 # Quit request from same host
                 self.send_response(200)
                 self.end_headers()
@@ -279,8 +278,9 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
         STATE.reload_proxy()
 
         # Find proxy
-        servers, netloc, path = STATE.wproxy.find_proxy_for_url(
-            ("https://" if "://" not in self.path else "") + self.path)
+        servers, netloc, _path = STATE.wproxy.find_proxy_for_url(
+            ("https://" if "://" not in self.path else "") + self.path
+        )
         if len(servers) == 0 or servers[0] == wproxy.DIRECT:
             # Fix #225 - empty list falls back to DIRECT
             dprint(self.curl.easyhash + ": Direct connection")
@@ -349,17 +349,17 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
 
     def send_html(self, code, message):
         "Send HTML error page - from BaseHTTPRequestHandler.send_error()"
-        content = (self.error_message_format % {
-            'code': code,
-            'message': html.escape(message, quote=False),
-            'explain': self.responses[code]
-        })
-        body = content.encode('UTF-8', 'replace')
+        content = self.error_message_format % {
+            "code": code,
+            "message": html.escape(message, quote=False),
+            "explain": self.responses[code],
+        }
+        body = content.encode("UTF-8", "replace")
         self.send_header("Content-Type", self.error_content_type)
-        self.send_header('Content-Length', str(len(body)))
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
 
-        if self.command != 'HEAD' and body:
+        if self.command != "HEAD" and body:
             self.wfile.write(body)
 
     def send_auth_headers(self, authtype="", challenge=""):
@@ -384,15 +384,14 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
                 self.send_header("Proxy-Authenticate", digest_header)
 
             if "BASIC" in STATE.client_auth:
-                self.send_header("Proxy-Authenticate",
-                                 f'Basic realm="{CLIENT_REALM}"')
+                self.send_header("Proxy-Authenticate", f'Basic realm="{CLIENT_REALM}"')
 
         self.send_header("Proxy-Connection", "Keep-Alive")
         self.send_html(407, "Proxy authentication required")
 
     def do_spnego_auth(self, auth_header, authtype):
         "Verify client login using pyspnego for authentication - NEGOTIATE, NTLM"
-        encoded_credentials = auth_header[len(authtype + " "):]
+        encoded_credentials = auth_header[len(authtype + " ") :]
         if not hasattr(self, "client_ctxt"):
             # Create new context for this client:port combo
             if authtype == "NEGOTIATE":
@@ -402,14 +401,10 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
                 options = spnego.NegotiateOptions.use_ntlm
             if sys.platform == "win32" and not STATE.client_nosspi:
                 options = spnego.NegotiateOptions.use_sspi
-            self.client_ctxt = spnego.auth.server(
-                protocol=authtype.lower(), options=options)
+            self.client_ctxt = spnego.auth.server(protocol=authtype.lower(), options=options)
         try:
-            outok = self.client_ctxt.step(
-                base64.b64decode(encoded_credentials))
-        except (spnego.exceptions.InvalidTokenError,
-                spnego.exceptions.SpnegoError,
-                ValueError) as exc:
+            outok = self.client_ctxt.step(base64.b64decode(encoded_credentials))
+        except (spnego.exceptions.InvalidTokenError, spnego.exceptions.SpnegoError, ValueError) as exc:
             # Invalid token = bad login or auth issues
             dprint("Authentication failed: " + str(exc))
             self.send_error(401, "Authentication failed")
@@ -417,8 +412,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
         if outok is not None:
             # Send challenge = client needs to send response
             dprint(f"Sending {authtype} challenge")
-            self.send_auth_headers(
-                authtype=authtype, challenge=base64.b64encode(outok).decode("utf-8"))
+            self.send_auth_headers(authtype=authtype, challenge=base64.b64encode(outok).decode("utf-8"))
             return False
         else:
             # Authentication complete
@@ -433,7 +427,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
 
     def do_digest_auth(self, auth_header):
         "Verify client login using Digest authentication"
-        encoded_credentials = auth_header[len("Digest "):]
+        encoded_credentials = auth_header[len("Digest ") :]
         params = {}
         for param in encoded_credentials.split(","):
             key, value = param.strip().split("=", 1)
@@ -460,9 +454,9 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
         # Check if digest response matches
         A1 = f"{client_username}:{CLIENT_REALM}:{client_password}"
         HA1 = hashlib.md5(A1.encode("utf-8")).hexdigest()
-        A2 = f'{self.command}:{params["uri"]}'
+        A2 = f"{self.command}:{params['uri']}"
         HA2 = hashlib.md5(A2.encode("utf-8")).hexdigest()
-        A3 = f'{HA1}:{params["nonce"]}:{params["nc"]}:{params["cnonce"]}:{params["qop"]}:{HA2}'
+        A3 = f"{HA1}:{params['nonce']}:{params['nc']}:{params['cnonce']}:{params['qop']}:{HA2}"
         response = hashlib.md5(A3.encode("utf-8")).hexdigest()
 
         if response != params["response"]:
@@ -481,7 +475,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
 
     def do_basic_auth(self, auth_header):
         "Verify client login using Basic authentication"
-        encoded_credentials = auth_header[len("Basic "):]
+        encoded_credentials = auth_header[len("Basic ") :]
         credentials = base64.b64decode(encoded_credentials).decode("utf-8")
         username, password = credentials.split(":", 1)
 
