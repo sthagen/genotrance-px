@@ -126,10 +126,18 @@ Local build helper used by both developers and the GitHub Actions workflows:
 Px is available as a prebuilt Docker image at `genotrance/px`. Two variants
 are posted — the default includes keyring and dependencies, while the mini
 version is smaller but requires `PX_PASSWORD` and `PX_CLIENT_PASSWORD`
-environment variables for credentials. Images are built and pushed automatically
+environment variables for credentials. The full image requires
+`--cap-add IPC_LOCK` at runtime because gnome-keyring-daemon (48+) links
+libcap-ng which aborts without the `IPC_LOCK` capability in containers.
+Images are built and pushed automatically
 as part of the `release` job in `build.yml` on merge to `master`. Docker Hub
 credentials are stored as repository secrets (`DOCKERHUB_USERNAME` and
 `DOCKERHUB_TOKEN`).
+
+`docker/Dockerfile` supports both CI and local builds via a `BUILDER` arg.
+CI uses the default (`ci`) which installs from pre-built wheel archives. Local
+builds use `BUILDER=local` which copies the source tree and runs `pip install`.
+Run `make docker` to build both images locally.
 
 ## Dependabot
 

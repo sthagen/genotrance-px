@@ -1,3 +1,6 @@
+VERSION := $(shell grep '^version' pyproject.toml | head -1 | cut -d'"' -f2)
+TAG := genotrance/px
+
 .PHONY: install
 install: ## Install the virtual environment and pre-commit hooks
 	@uv sync
@@ -20,6 +23,13 @@ test-musl: ## Build and test in musl (Alpine) containers
 .PHONY: test-glibc
 test-glibc: ## Build and test in glibc (manylinux) containers
 	@. ./build.sh && build_local glibc
+
+.PHONY: docker
+docker: ## Build local Docker images (full and mini)
+	docker build -f docker/Dockerfile --build-arg BUILDER=local \
+		--target mini -t $(TAG):$(VERSION)-mini -t $(TAG):latest-mini .
+	docker build -f docker/Dockerfile --build-arg BUILDER=local \
+		-t $(TAG):$(VERSION) -t $(TAG):latest .
 
 .PHONY: build
 build: clean ## Build sdist and wheel

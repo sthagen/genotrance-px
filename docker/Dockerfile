@@ -1,18 +1,34 @@
+# Select builder: --build-arg BUILDER=local for local builds (default: ci)
+ARG BUILDER=ci
+
 # Main image to use
 FROM python:alpine AS base
 
-FROM base AS builder
+###
+# CI builder — installs from pre-built wheel archives
+FROM base AS builder-ci
 
 # VERSION argument
 ARG VERSION
 ARG WHEELS_DIR=px.dist-linux-musl-x86_64-wheels
 
-# Copy and extract binary
+# Copy and extract wheels
 COPY ${WHEELS_DIR}/px-v${VERSION}-linux-musl-x86_64-wheels.tar.gz /tmp/wheels.tar.gz
 RUN tar -xzf /tmp/wheels.tar.gz -C /tmp
 
 # Install px
 RUN python -m pip install --user px-proxy --no-index -f /tmp --no-cache-dir
+
+###
+# Local builder — installs from source tree
+FROM base AS builder-local
+
+COPY . /src
+RUN pip install --user /src
+
+###
+# Select builder based on BUILDER arg
+FROM builder-${BUILDER} AS builder
 
 ###
 # Create mini image

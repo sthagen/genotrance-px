@@ -1,0 +1,13 @@
+.git
+.venv
+.tox
+.mypy_cache
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+px.dist-*
+wheels
+build
+dist
+*.egg-info
