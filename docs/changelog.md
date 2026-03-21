@@ -2,6 +2,42 @@
 
 ---
 
+## v0.11.0 — unreleased
+
+### New features
+- Added Kerberos ticket management (`--kerberos`) for Linux and macOS — Px
+  acquires and renews Kerberos tickets automatically using `kinit` with the
+  configured `--username` and password from `PX_PASSWORD` or keyring. No keytab
+  file is created. Addresses #252 and #258.
+
+### Bug fixes
+- Fixed auth failure recovery when a Kerberos ticket becomes available after Px
+  startup — clearing `MCURL.failed` allows previously-blocked proxies to be
+  retried (#258).
+
+### Docker
+- Consolidated `Dockerfile` and `Dockerfile-mini` into a single multi-stage
+  `Dockerfile` with a `mini` build target.
+- Added `BUILDER` build arg to support both CI (pre-built wheel) and local
+  (source tree) builds.
+- The full Docker image now requires `--cap-add IPC_LOCK` — gnome-keyring 48+
+  (Alpine 3.23+) links libcap-ng which aborts without the `IPC_LOCK` capability.
+- Gracefully handle keyring failures in `get_password()` so Px logs the error
+  and falls back instead of crashing.
+
+### Improvements
+- Reduced per-request overhead in `reload_proxy()` with double-checked locking
+  to avoid acquiring the state lock when a reload is not needed.
+- Cached `get_curl_features()` result at startup since libcurl features never
+  change at runtime, avoiding repeated FFI calls on every proxied request.
+- Cached the `noproxy_hosts` joined string on the `Wproxy` object so it is
+  only recomputed when proxy information is reloaded, not on every request.
+- Replaced `copy.deepcopy()` with shallow copy for the immutable proxy server
+  list returned by `find_proxy_for_url()`.
+- Used tuples instead of lists for membership checks in the request hot path.
+
+---
+
 ## v0.10.3 — 2026-03-11
 
 ### Bug fixes

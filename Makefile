@@ -31,6 +31,10 @@ docker: ## Build local Docker images (full and mini)
 	docker build -f docker/Dockerfile --build-arg BUILDER=local \
 		-t $(TAG):$(VERSION) -t $(TAG):latest .
 
+.PHONY: test-kerberos
+test-kerberos: docker ## Run Kerberos integration tests against a local KDC in Docker
+	@uv run python -m pytest tests/test_kerberos.py -m integration -v
+
 .PHONY: build
 build: clean ## Build sdist and wheel
 	@uv build

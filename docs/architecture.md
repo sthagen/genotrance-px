@@ -59,6 +59,7 @@ to accept on the same socket, so Px is limited to a single worker process on Mac
 | `px/pacutils.py` | Mozilla PAC utility functions injected into the QuickJS runtime |
 | `px/debug.py` | `Debug` singleton — stdout/file logging redirection |
 | `px/help.py` | CLI help text (rendered from `--help`) |
+| `px/kerberos.py` | `KerberosManager` — Kerberos ticket lifecycle (kinit, renewal, cleanup) |
 | `px/version.py` | Version string |
 | `px/windows.py` | Windows-specific: registry install/uninstall, console attach/detach |
 
@@ -177,3 +178,51 @@ without restarting.
 - **Debug module** — `pprint()` and `dprint()` silently swallow exceptions to
   ensure logging never crashes the proxy. Bare excepts in `debug.py` are
   intentional.
+
+## Kerberos ticket management (`px.kerberos`)
+
+On Linux and macOS, upstream Kerberos (NEGOTIATE) authentication requires a
+valid TGT in the credential cache. `KerberosManager` handles the full ticket
+lifecycle so users do not need external `kinit` scripts.
+
+### Inline check pattern
+
+`reload_kerberos()` follows the same pattern as `reload_proxy()`: it is called
+on every request from `get_destination()`, uses a timestamp gate for the fast
+path, and acquires a blocking lock so concurrent threads wait for renewal
+instead of proceeding with an expired ticket.
+
+### Per-process isolation
+
+Each worker process creates its own `KerberosManager` with an isolated
+credential cache (`KRB5CCNAME=FILE:/tmp/krb5cc_px_<pid>`). Since workers call
+`parse_config()` independently after `spawn`, each gets its own instance with
+no shared state.
+
+### GSS-API path override
+
+When `--kerberos` is enabled, `set_curl_auth()` forces `key = ":"` (GSS-API
+mode) regardless of whether `--username` is set. The username and password are
+used only by `KerberosManager` for `kinit`, not passed to libcurl.
+
+### PTY-based password piping
+
+`kinit` reads passwords from `/dev/tty`, not stdin. `KerberosManager` uses
+`pty.openpty()` to create a pseudo-terminal pair, makes the slave side the
+child process's controlling terminal via `setsid` + `TIOCSCTTY`, then writes
+the password on the master side so that kinit's `read(/dev/tty)` sees it.
+No keytab file is created — credentials stay in memory.
+
+### Auth failure recovery
+
+When libcurl reports an SSO failure (`resp == 401`, "single sign-on failed") or
+a mechanism error (`resp == 407`, "auth mechanism error"), the reactive check
+forces a ticket renewal bypassing both the fast-path timestamp gate and the
+in-lock double-check. If the ticket is invalid, a new one is acquired and
+`MCURL.failed` is cleared so previously-blocked proxies are retried.
+
+### Credential cache cleanup
+
+`atexit` registers `_cleanup()` to remove the per-process ccache file.
+`do_quit()` calls `cleanup_kerberos()` explicitly before `os._exit()` since
+`os._exit()` bypasses `atexit` handlers.

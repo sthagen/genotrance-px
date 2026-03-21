@@ -339,6 +339,7 @@ DEFAULTS = {
     "useragent": "",
     "username": "",
     "auth": "",
+    "kerberos": "0",
     "workers": "2",
     "threads": "32",
     "idle": "30",
@@ -372,6 +373,7 @@ class State:
 
     # Auth
     auth = "ANY"
+    kerberos = False
     username = ""
 
     client_auth: list = []
@@ -381,14 +383,16 @@ class State:
     # Objects
     allow = netaddr.IPGlob("*.*.*.*")
     config = None
+    curl_features = []
     debug = None
+    krb_manager = None
     location = LOG_NONE
     mcurl = None
     stdout = None
     wproxy = None
 
     # Tracking
-    proxy_last_reload = None
+    proxy_last_reload = 0
 
     # Lock for thread synchronization of State object
     # multiprocess sync isn't neccessary because State object is only shared by
@@ -417,6 +421,7 @@ class State:
             "useragent": self.set_useragent,
             "username": self.set_username,
             "auth": self.set_auth,
+            "kerberos": self.set_kerberos,
             "client_username": self.set_client_username,
             "client_auth": self.set_client_auth,
             "client_nosspi": self.set_client_nosspi,
@@ -514,6 +519,10 @@ class State:
         _ = mcurl.getauth(auth)
 
         self.auth = auth
+
+    def set_kerberos(self, kerberos):
+        "Set kerberos ticket management"
+        self.kerberos = kerberos == 1 or kerberos == "1"
 
     def set_client_username(self, username):
         "Set client username"
@@ -642,7 +651,7 @@ class State:
         # [proxy]
         if name in ["server", "pac", "pac_encoding", "listen", "allow", "noproxy", "useragent", "username", "auth"]:
             self.cfg_str_init("proxy", name, val, callback, override)
-        elif name in ["port", "gateway", "hostonly"]:
+        elif name in ["port", "gateway", "hostonly", "kerberos"]:
             self.cfg_int_init("proxy", name, val, callback, override)
 
         # [client]
@@ -895,21 +904,73 @@ class State:
         # Curl multi object to manage all easy connections
         self.mcurl = mcurl.MCurl(debug_print=dprint)
 
+        # Cache curl features - these are compiled into libcurl and never change
+        self.curl_features = mcurl.get_curl_features()
+
+        # Initialize Kerberos ticket management if enabled
+        if self.kerberos and sys.platform != "win32":
+            from .kerberos import KerberosManager
+
+            if len(self.username) == 0:
+                pprint("--kerberos requires --username to be set")
+                sys.exit(ERROR_CONFIG)
+
+            if "SSPI" not in self.curl_features and "GSS-API" not in self.curl_features:
+                pprint("--kerberos requires libcurl built with GSS-API support")
+                sys.exit(ERROR_CONFIG)
+
+            def get_password():
+                if "PX_PASSWORD" in os.environ:
+                    return os.environ["PX_PASSWORD"]
+                try:
+                    return keyring.get_password(REALM, self.username)
+                except Exception as exc:
+                    dprint(f"Kerberos: keyring error: {exc}")
+                    return None
+
+            self.krb_manager = KerberosManager(
+                principal=self.username,
+                password_func=get_password,
+                debug_print=dprint,
+            )
+            if not self.krb_manager.check(force=True):
+                pprint("Kerberos: failed to acquire initial ticket - check username and password")
+                # Don't exit — px can still retry later or fall back to other auth
+
+    def reload_kerberos(self, force=False):
+        """Check Kerberos ticket validity and renew if needed."""
+        if self.krb_manager is None:
+            return
+        result = self.krb_manager.check(force=force)
+        if result is True:
+            # Fresh ticket acquired — clear auth failure cache so
+            # previously-blocked proxies are retried
+            self.mcurl.failed.clear()
+
+    def cleanup_kerberos(self):
+        """Explicitly clean up Kerberos credential cache."""
+        if self.krb_manager is not None:
+            self.krb_manager._cleanup()
+
     def reload_proxy(self):
         if self.wproxy is not None:
-            if self.wproxy.mode in [wproxy.MODE_CONFIG, wproxy.MODE_ENV]:
+            if self.wproxy.mode in (wproxy.MODE_CONFIG, wproxy.MODE_ENV):
                 # Config file entries not reloaded, env for running process should not change
                 return
             elif self.wproxy.mode == wproxy.MODE_CONFIG_PAC and not self.pac.startswith("http"):
                 # Local PAC file not reloaded
                 return
 
+        # Fast path: skip lock if recently reloaded
+        if time.time() - self.proxy_last_reload < self.proxyreload:
+            return
+
         # Do locking to avoid updating globally shared State object by multiple
         # threads simultaneously
         self.state_lock.acquire()
         try:
-            # Check if need to refresh
-            if self.proxy_last_reload is not None and time.time() - self.proxy_last_reload < self.proxyreload:
+            # Double-check after acquiring lock in case another thread already reloaded
+            if time.time() - self.proxy_last_reload < self.proxyreload:
                 dprint("Skip proxy refresh")
                 return
 

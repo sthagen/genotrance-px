@@ -142,6 +142,10 @@ whereas the mini version is smaller but requires `PX_PASSWORD` and
 --name px       name container so it is easy to stop it
 -d              run in the background
 --rm            remove container on exit
+
+--cap-add IPC_LOCK
+                required for the full image — gnome-keyring-daemon needs
+                the IPC_LOCK capability to manage secure memory
 ```
 
 ### Networking
@@ -186,3 +190,14 @@ The mini image requires environment variables:
 ```
 -e PX_PASSWORD=... -e PX_CLIENT_PASSWORD=...
 ```
+
+### Kerberos in Docker
+
+The full Docker image includes the `krb5` package (providing `kinit` and
+`klist`) and runs `gnome-keyring-daemon` via `start.sh`, so both Kerberos ticket
+management and keyring credential storage work out of the box. The mini image
+does not include keyring support.
+
+See the [Kerberos Docker usage](https://github.com/genotrance/px/blob/master/docs/usage.md#docker-usage)
+section for `docker run` examples covering keyring setup, volume mounts, and
+`PX_PASSWORD` fallback.

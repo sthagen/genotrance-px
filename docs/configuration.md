@@ -76,6 +76,12 @@ The `--save` flag writes the current configuration to `px.ini`:
 |------|---------|---------|---------|-------------|
 | `--username=DOMAIN\user` | `PX_USERNAME` | `proxy:username` | *(none)* | Username for upstream proxy auth |
 | `--auth=TYPE` | `PX_AUTH` | `proxy:auth` | `ANY` | Upstream proxy auth type |
+| `--kerberos=0\|1` | `PX_KERBEROS` | `proxy:kerberos` | `0` | Enable Kerberos ticket management (Linux/macOS only) |
+
+When `--kerberos` is enabled, Px acquires and renews Kerberos tickets
+automatically using `--username` as the Kerberos principal and the password from
+`PX_PASSWORD` or keyring. Requires `--username` and libcurl with GSS-API support.
+See [usage.md](usage.md#kerberos-authentication) for details.
 
 ### Auth type values
 

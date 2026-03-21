@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "px-proxy"
-version = "0.10.3"
+version = "0.11.0"
 description = "An HTTP proxy server to automatically authenticate through an NTLM proxy"
 authors = [
   {name = "Ganesh Viswanathan", email = "dev@genotrance.com"}
@@ -93,6 +93,10 @@ ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: Docker-based integration tests (require docker, run with: pytest -m integration)",
+]
+addopts = "-m 'not integration'"
 
 [tool.ruff]
 target-version = "py310"
@@ -123,11 +127,15 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["A001", "B011", "B018", "C901", "F403", "F405", "RUF005", "RUF059", "S101", "S105", "S602", "S605", "SIM105", "SIM115", "TRY003", "TRY300"]
+"tests/*" = ["A001", "B011", "B018", "C901", "F403", "F405", "RUF005", "RUF059", "S101", "S105", "S107", "S602", "S605", "SIM102", "SIM105", "SIM115", "TRY003", "TRY300"]
 # A001/A002: quit/exit shadow builtins (public API); C901: complex functions; E722/S110: intentional bare excepts; RUF012: mutable class default
 "px/config.py" = ["A001", "A002", "C901", "E722", "RUF012", "S110"]
 # A002: format param shadows builtin (BaseHTTPRequestHandler API); C901: complex functions; E402: import after monkey-patch; S324: md5 required by HTTP digest; SIM102/SIM108: readability
 "px/handler.py" = ["A002", "C901", "E402", "S324", "SIM102", "SIM108"]
+# S603/S607: kinit/klist subprocess calls are intentional and safe
+"px/kerberos.py" = ["S603", "S607"]
+# S603/S607: docker subprocess calls in integration tests are intentional
+"tests/test_kerberos.py" = ["S603", "S607"]
 # A002: quit param shadows builtin; C901: complex test function; E722: intentional bare except; SIM102: readability
 "px/main.py" = ["A002", "C901", "E722", "SIM102"]
 # C901: complex Windows proxy detection functions

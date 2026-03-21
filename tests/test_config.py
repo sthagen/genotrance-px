@@ -146,6 +146,7 @@ def generate_config():
         "gateway",
         "hostonly",
         "idle",
+        "kerberos",
         "listen",
         "log",
         "noproxy",
@@ -170,7 +171,7 @@ def generate_config():
             value = "latin-1"
         elif key == "listen":
             value = "100.0.0.11"
-        elif key in ["gateway", "hostonly", "foreground", "client_nosspi"]:
+        elif key in ["gateway", "hostonly", "foreground", "client_nosspi", "kerberos"]:
             value = 1
         elif key in ["allow", "noproxy"]:
             value = "127.0.0.1"

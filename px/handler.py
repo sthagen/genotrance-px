@@ -90,7 +90,16 @@ def set_curl_auth(curl, auth):
         # Connecting to proxy and authenticating
         key = ""
         pwd = None
-        if len(STATE.username) != 0:
+        if STATE.kerberos:
+            # Kerberos managed by px — use GSS-API with ticket from ccache
+            features = STATE.curl_features
+            if "SSPI" in features or "GSS-API" in features:
+                dprint(curl.easyhash + ": Using managed Kerberos ticket via GSS-API")
+                key = ":"
+            else:
+                dprint("Kerberos enabled but GSS-API not available in libcurl")
+                return
+        elif len(STATE.username) != 0:
             key = STATE.username
             if "PX_PASSWORD" in os.environ:
                 # Use environment variable PX_PASSWORD
@@ -100,7 +109,7 @@ def set_curl_auth(curl, auth):
                 pwd = keyring.get_password("Px", key)
         if len(key) == 0:
             # No username, try SSPI / GSS-API
-            features = mcurl.get_curl_features()
+            features = STATE.curl_features
             if "SSPI" in features or "GSS-API" in features:
                 dprint(curl.easyhash + ": Using SSPI/GSS-API to login")
                 key = ":"
@@ -172,7 +181,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
             # libcurl handles noproxy domains only. IP addresses are still handled within wproxy
             # since libcurl only supports CIDR addresses since v7.86 and does not support wildcards
             # (192.168.0.*) or ranges (192.168.0.1-192.168.0.255)
-            noproxy_hosts = ",".join(STATE.wproxy.noproxy_hosts) or None
+            noproxy_hosts = STATE.wproxy.noproxy_hosts_str
             ret = self.curl.set_proxy(proxy=server, port=port, noproxy=noproxy_hosts)
             if not ret:
                 # Proxy server has had auth issues so returning failure to client
@@ -195,7 +204,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
             # Support NTLM auth from http client in auth=NONE mode with upstream proxy
             # https://github.com/curl/curl/discussions/15700
             if ipport is None and STATE.auth == "NONE":
-                if self.command in ["POST", "PUT", "PATCH"]:
+                if self.command in ("POST", "PUT", "PATCH"):
                     # POST / PUT / PATCH with Content-Length = 0
                     content_length = self.headers.get("Content-Length")
                     if content_length is not None and content_length == "0":
@@ -215,6 +224,13 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
 
         if not STATE.mcurl.do(self.curl):
             dprint(self.curl.easyhash + ": Connection failed: " + self.curl.errstr)
+
+            # If SSO auth failure or mechanism error, force Kerberos ticket check
+            if (self.curl.resp == 401 and "single sign-on failed" in self.curl.errstr) or (
+                self.curl.resp == 407 and "auth mechanism error" in self.curl.errstr
+            ):
+                STATE.reload_kerberos(force=True)
+
             self.send_error(self.curl.resp, self.curl.errstr)
         elif self.curl.is_connect:
             ret, used_proxy = self.curl.get_used_proxy()
@@ -245,6 +261,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
                 # Quit request from same host
                 self.send_response(200)
                 self.end_headers()
+                STATE.cleanup_kerberos()
                 os._exit(config.ERROR_SUCCESS)
 
         self.send_error(403)
@@ -276,6 +293,9 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
     def get_destination(self):
         # Reload proxy info if timeout exceeded
         STATE.reload_proxy()
+
+        # Check Kerberos ticket validity
+        STATE.reload_kerberos()
 
         # Find proxy
         servers, netloc, _path = STATE.wproxy.find_proxy_for_url(
@@ -502,7 +522,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
                     dprint("No auth header")
                     self.send_auth_headers()
                     return False
-                elif self.command in ["POST", "PUT", "PATCH"]:
+                elif self.command in ("POST", "PUT", "PATCH"):
                     # POST / PUT / PATCH with Content-Length = 0
                     content_length = self.headers.get("Content-Length")
                     if content_length is not None and content_length == "0":
@@ -521,7 +541,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
 
                 # Authenticate client using the specified authentication type
                 dprint("Auth type: " + authtype)
-                if authtype in ["NEGOTIATE", "NTLM"]:
+                if authtype in ("NEGOTIATE", "NTLM"):
                     if not self.do_spnego_auth(auth_header, authtype):
                         return False
                 elif authtype == "DIGEST":

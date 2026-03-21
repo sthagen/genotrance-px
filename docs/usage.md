@@ -108,6 +108,108 @@ If the default SecretService backend does not work, install a third-party
 
 For Nuitka binaries where keyring is unavailable, use `PX_PASSWORD` instead.
 
+## Kerberos authentication
+
+On Linux and macOS, upstream proxy authentication using Kerberos (NEGOTIATE)
+requires a valid Kerberos ticket in the credential cache. Px can manage this
+automatically with the `--kerberos` flag.
+
+When `--kerberos` is enabled, Px:
+
+- Acquires a Kerberos TGT at startup using `kinit` with the configured
+  `--username` as the Kerberos principal and the password from `PX_PASSWORD`
+  or the system keyring.
+- Renews the ticket proactively before it expires.
+- Retries acquisition if authentication fails (e.g. after laptop sleep).
+- Cleans up the per-process credential cache on exit.
+
+No keytab file is created — credentials stay in memory.
+
+### Native usage
+
+Save the password to keyring first (one-time setup), then run with `--kerberos`:
+
+```bash
+# Save password to keyring (prompts interactively)
+px --username=user@REALM --password
+
+# Run with Kerberos ticket management
+px --kerberos --auth=NEGOTIATE --username=user@REALM
+```
+
+If keyring is unavailable, `PX_PASSWORD` can be used instead:
+
+```bash
+PX_PASSWORD=... px --kerberos --auth=NEGOTIATE --username=user@REALM
+```
+
+### Docker usage
+
+The Docker image includes the `krb5` package which provides `kinit` and `klist`.
+Mount `/etc/krb5.conf` from the host (or bake it into a custom image) so that
+Kerberos can find the KDC for your realm.
+
+The full image requires `--cap-add IPC_LOCK` so that `gnome-keyring-daemon` can
+lock memory pages for secure credential storage.
+
+The recommended approach is to store the password in keyring rather than passing
+it via `PX_PASSWORD`. Mount a host directory for keyring persistence and save
+the password once:
+
+```bash
+# Save password to keyring (one-time setup)
+docker run --rm -it --cap-add IPC_LOCK \
+    -v /keyrings:/root/.local/share/keyrings \
+    genotrance/px --username=user@REALM --password
+```
+
+Then run Px with the keyring mount and Kerberos enabled:
+
+```bash
+docker run --rm -d --network host --cap-add IPC_LOCK \
+    -v /etc/krb5.conf:/etc/krb5.conf:ro \
+    -v /keyrings:/root/.local/share/keyrings \
+    -e PX_KERBEROS=1 \
+    -e PX_AUTH=NEGOTIATE \
+    -e PX_USERNAME=user@REALM \
+    genotrance/px
+```
+
+This avoids placing the password in an environment variable (which is visible
+in `docker inspect` and `/proc/<pid>/environ`). The keyring volume can be reused
+across container restarts.
+
+If keyring is not an option (e.g. when using the mini image), fall back to the
+environment variable:
+
+```bash
+docker run --rm -d --network host \
+    -v /etc/krb5.conf:/etc/krb5.conf:ro \
+    -e PX_KERBEROS=1 \
+    -e PX_AUTH=NEGOTIATE \
+    -e PX_USERNAME=user@REALM \
+    -e PX_PASSWORD=... \
+    genotrance/px:mini
+```
+
+### Self-managed tickets
+
+Without `--kerberos`, Px does not manage Kerberos tickets. You must run `kinit`
+externally and handle renewal (e.g. via `kinit -R` in a cron job or startup
+script). If the ticket expires, Px will fail to authenticate until a new ticket
+is obtained and Px is restarted.
+
+### Password expiry
+
+If the password in `PX_PASSWORD` or keyring expires while Px is running, ticket
+renewal via `kinit -R` continues working as long as the current TGT is still
+valid and within its renewable lifetime. Once renewal fails, Px logs a message
+and backs off. Update the password via `PX_PASSWORD` or `--password` and restart
+Px.
+
+On Windows, `--kerberos` is silently ignored because Windows uses SSPI for
+Kerberos authentication, which handles ticket management transparently.
+
 ## Client authentication
 
 Px can authenticate downstream clients connecting to it. This is useful in

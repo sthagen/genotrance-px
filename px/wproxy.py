@@ -1,6 +1,5 @@
 "Load proxy information from the operating system"
 
-import copy
 import socket
 import sys
 import urllib.parse
@@ -130,6 +129,7 @@ class _WproxyBase:
     servers = None
     noproxy = None
     noproxy_hosts = None
+    noproxy_hosts_str = None
     pac = None
     pac_encoding = None
 
@@ -163,6 +163,9 @@ class _WproxyBase:
                     npxy, npxy_hosts = parse_noproxy(proxy["no"])
                     self.noproxy.update(npxy)
                     self.noproxy_hosts.update(npxy_hosts)
+
+        # Cache joined noproxy_hosts string for per-request use
+        self.noproxy_hosts_str = ",".join(self.noproxy_hosts) or None
 
     def get_netloc(self, url):
         "Split url into netloc = hostname:port and path"
@@ -246,9 +249,9 @@ class _WproxyBase:
             # Direct connection since in noproxy list
             return [DIRECT], ipport, path
 
-        if self.mode in [MODE_ENV, MODE_CONFIG]:
+        if self.mode in (MODE_ENV, MODE_CONFIG):
             # Return proxy from environment or configuration
-            return copy.deepcopy(self.servers), netloc, path
+            return self.servers[:], netloc, path
 
         if self.mode == MODE_CONFIG_PAC:
             # Return proxy from configured PAC URL/file
@@ -393,6 +396,9 @@ if sys.platform == "win32":
 
             dprint("Proxy mode = " + MODES[self.mode])
 
+            # Re-cache after Windows-specific noproxy_hosts mutations
+            self.noproxy_hosts_str = ",".join(self.noproxy_hosts) or None
+
         # Find proxy for specified URL using WinHttp API
         #   Used internally for MODE_AUTO and MODE_PAC
         def winhttp_find_proxy_for_url(self, url, autologon=True):
@@ -473,12 +479,12 @@ if sys.platform == "win32":
             if servers is not None:
                 # MODE_NONE, MODE_ENV, MODE_CONFIG, MODE_CONFIG_PAC or url in no_proxy
                 return servers, netloc, path
-            elif self.mode in [MODE_AUTO, MODE_PAC]:
+            elif self.mode in (MODE_AUTO, MODE_PAC):
                 # Use proxies as resolved via WinHttp
                 return parse_proxy(self.winhttp_find_proxy_for_url(url)), netloc, path
-            elif self.mode in [MODE_MANUAL]:
+            elif self.mode in (MODE_MANUAL,):
                 # Use specific proxies configured
-                return copy.deepcopy(self.servers), netloc, path
+                return self.servers[:], netloc, path
 
 else:
 

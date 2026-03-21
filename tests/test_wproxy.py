@@ -122,6 +122,7 @@ class TestWproxyBase:
         w = _WproxyBase(mode=MODE_CONFIG, servers=[("proxy.com", 8080)])
         assert w.mode == MODE_CONFIG
         assert w.servers == [("proxy.com", 8080)]
+        assert w.noproxy_hosts_str is None
 
     def test_mode_none_no_env_proxy(self, monkeypatch):
         monkeypatch.delenv("http_proxy", raising=False)
@@ -154,12 +155,22 @@ class TestWproxyBase:
         from px.wproxy import _WproxyBase
 
         w = _WproxyBase(mode=MODE_CONFIG, servers=[("proxy.com", 8080)], noproxy="127.0.0.1")
+        # 127.0.0.1 is an IP so goes into noproxy IPSet, not noproxy_hosts
+        assert w.noproxy_hosts_str is None
         # Mock getaddrinfo to return 127.0.0.1
         monkeypatch.setattr(
             socket, "getaddrinfo", lambda host, port, *a, **kw: [(None, None, None, None, ("127.0.0.1", 80))]
         )
         servers, netloc, path = w.find_proxy_for_url("http://127.0.0.1")
         assert servers == [DIRECT]
+
+    def test_noproxy_hosts_str_cached(self):
+        from px.wproxy import _WproxyBase
+
+        w = _WproxyBase(mode=MODE_CONFIG, servers=[("proxy.com", 8080)], noproxy="localhost,intranet.local")
+        assert w.noproxy_hosts_str is not None
+        assert "localhost" in w.noproxy_hosts_str
+        assert "intranet.local" in w.noproxy_hosts_str
 
     def test_get_netloc_with_port(self):
         from px.wproxy import _WproxyBase

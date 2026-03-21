@@ -130,6 +130,15 @@ Configuration:
       Client -> Auth Px -> no-Auth Px -> Upstream proxy
         'Auth Px' cannot directly access upstream proxy but 'no-Auth Px' can
 
+  --kerberos= | PX_KERBEROS= | proxy:kerberos=
+  Enable Kerberos ticket management. 0 or 1, default: 0
+    Px will acquire and renew Kerberos tickets automatically using the
+    configured --username as the Kerberos principal and the password from
+    PX_PASSWORD or the keyring. No keytab file is created - credentials stay
+    in memory. The ticket cache is per-process and cleaned up on exit.
+    Requires --username and libcurl with GSS-API. Only effective on Linux
+    and macOS (Windows uses SSPI).
+
   --client-username= | PX_CLIENT_USERNAME= | client:client_username=
   Client authentication to use when SSPI is unavailable. Format is domain\\username
   Service name "PxClient" and this username are used to retrieve the password using
