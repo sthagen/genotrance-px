@@ -101,7 +101,7 @@ def set_curl_auth(curl, auth):
                 return
         elif len(STATE.username) != 0:
             key = STATE.username
-            if "PX_PASSWORD" in os.environ:
+            if "PX_PASSWORD" in os.environ:  # noqa: SIM108
                 # Use environment variable PX_PASSWORD
                 pwd = os.environ["PX_PASSWORD"]
             else:
@@ -203,15 +203,14 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
 
             # Support NTLM auth from http client in auth=NONE mode with upstream proxy
             # https://github.com/curl/curl/discussions/15700
-            if ipport is None and STATE.auth == "NONE":
-                if self.command in ("POST", "PUT", "PATCH"):
-                    # POST / PUT / PATCH with Content-Length = 0
-                    content_length = self.headers.get("Content-Length")
-                    if content_length is not None and content_length == "0":
-                        dprint(self.curl.easyhash + ": Setting CURLOPT_KEEP_SENDING_ON_ERROR")
-                        mcurl.libcurl.curl_easy_setopt(
-                            self.curl.easy, mcurl.libcurl.CURLOPT_KEEP_SENDING_ON_ERROR, mcurl.py2cbool(True)
-                        )
+            if ipport is None and STATE.auth == "NONE" and self.command in ("POST", "PUT", "PATCH"):
+                # POST / PUT / PATCH with Content-Length = 0
+                content_length = self.headers.get("Content-Length")
+                if content_length is not None and content_length == "0":
+                    dprint(self.curl.easyhash + ": Setting CURLOPT_KEEP_SENDING_ON_ERROR")
+                    mcurl.libcurl.curl_easy_setopt(
+                        self.curl.easy, mcurl.libcurl.CURLOPT_KEEP_SENDING_ON_ERROR, mcurl.py2cbool(True)
+                    )
 
         # Set headers for request
         self.curl.set_headers(self.headers)
@@ -547,7 +546,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
                 elif authtype == "DIGEST":
                     if not self.do_digest_auth(auth_header):
                         return False
-                elif authtype == "BASIC":
+                elif authtype == "BASIC":  # noqa: SIM102
                     if not self.do_basic_auth(auth_header):
                         return False
         else:

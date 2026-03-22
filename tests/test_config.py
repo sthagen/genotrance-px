@@ -1,12 +1,14 @@
 import configparser
+import copy
 import os
 import shutil
 import subprocess
+import sys
 import unittest.mock
 
 import pytest
-from fixtures import *
-from helpers import *
+from fixtures import *  # noqa: F403
+from helpers import *  # noqa: F403
 
 from px import config
 
@@ -271,7 +273,8 @@ def _test_save(px_bin, pxini_location, monkeypatch, tmp_path):
 
     # Load generated file
     assert os.path.exists(pxini_path), f"px.ini not found at {pxini_path}"
-    ini_content = open(pxini_path).read()
+    with open(pxini_path) as f:
+        ini_content = f.read()
     config = configparser.ConfigParser()
     config.read(pxini_path)
 
@@ -291,7 +294,7 @@ def _test_save(px_bin, pxini_location, monkeypatch, tmp_path):
         elif config.has_section("settings") and config.has_option("settings", name):
             assert config.get("settings", name) == str(value)
         else:
-            assert False, f"Unknown key: {name} in {pxini_path}\n{ini_content}"
+            pytest.fail(f"Unknown key: {name} in {pxini_path}\n{ini_content}")
 
 
 def _px_w_variant(px_bin):
@@ -313,7 +316,7 @@ def test_save(px_bin, pxini_location, monkeypatch, tmp_path):
 def _test_install(px_bin, pxini_location, monkeypatch, tmp_path_factory, tmp_path):
     # Setup config
     cmd = ""
-    backup, _, env, pxini_path = config_setup(cmd, px_bin, pxini_location, monkeypatch, tmp_path)
+    backup, _, _env, pxini_path = config_setup(cmd, px_bin, pxini_location, monkeypatch, tmp_path)
 
     # Setup mocks
     mock_OpenKey = unittest.mock.Mock(return_value="runkey")

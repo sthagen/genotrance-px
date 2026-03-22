@@ -6,7 +6,6 @@ import time
 import unittest.mock
 
 import pytest
-from fixtures import *
 
 from px.kerberos import CHECK_INTERVAL, RETRY_INTERVAL
 
@@ -1324,9 +1323,10 @@ def _docker_available():
     """Return True if docker is accessible."""
     try:
         subprocess.run(["docker", "info"], capture_output=True, timeout=5, check=True)
-        return True
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
+    else:
+        return True
 
 
 def _image_available(*images):

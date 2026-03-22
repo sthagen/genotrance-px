@@ -1,5 +1,6 @@
 "Direct stdout and stderr to a file for debugging"
 
+import contextlib
 import multiprocessing
 import os
 import sys
@@ -10,10 +11,8 @@ import time
 # Print if possible
 def pprint(*objs):
     "Catch exception if print not possible while running in the background"
-    try:
+    with contextlib.suppress(Exception):
         print(*objs)
-    except:
-        pass
 
 
 class Debug:
@@ -63,10 +62,8 @@ class Debug:
     def write(self, data):
         "Write data to debug file and stdout"
         if self.file is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.file.write(data)
-            except:
-                pass
         if self.stdout is not None:
             self.stdout.write(data)
         self.flush()

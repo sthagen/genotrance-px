@@ -249,10 +249,8 @@ def nuitka():
 
     os.chdir(dist)
     # Fix binary name on Linux/Mac
-    try:
+    with contextlib.suppress(FileNotFoundError):
         os.rename("px.bin", "px")
-    except FileNotFoundError:
-        pass
 
     # Nuitka imports wrong openssl libs on Mac
     if sys.platform == "darwin":
@@ -313,10 +311,8 @@ def embed():
 
     # Get latest releases from web
     ret, data = curl("https://www.python.org/downloads/windows/", encoding=None)
-    try:
+    with contextlib.suppress(gzip.BadGzipFile):
         data = gzip.decompress(data)
-    except gzip.BadGzipFile:
-        pass
     data = data.decode("utf-8")
 
     # Get Python version from CLI if specified
@@ -327,11 +323,10 @@ def embed():
     dlurl = ""
     for url in urls:
         # Filter embedded amd64 URLs
-        if "embed" in url and "amd64" in url:
-            # Get the first or specified version URL
-            if len(version) == 0 or version in url:
-                dlurl = url
-                break
+        # Get the first or specified version URL
+        if "embed" in url and "amd64" in url and (len(version) == 0 or version in url):
+            dlurl = url
+            break
 
     # Download zip file
     fname = os.path.join(outdir, os.path.basename(dlurl))
@@ -384,13 +379,16 @@ def embed():
         dataout = bytearray()
         skip = False
         for i, byte in enumerate(data):
-            if byte == 0x23 and data[i + 1] == 0x21:  # !
-                if (data[i + 2] >= 0x41 and data[i + 2] <= 0x5A) or (
-                    data[i + 2] >= 0x61 and data[i + 2] <= 0x7A
-                ):  # A-Za-z - drive letter
-                    if data[i + 3] == 0x3A:  # Colon
-                        skip = True
-                        continue
+            if (
+                byte == 0x23
+                and data[i + 1] == 0x21  # !
+                and (
+                    (data[i + 2] >= 0x41 and data[i + 2] <= 0x5A) or (data[i + 2] >= 0x61 and data[i + 2] <= 0x7A)
+                )  # A-Za-z - drive letter
+                and data[i + 3] == 0x3A  # Colon
+            ):
+                skip = True
+                continue
 
             if skip:
                 if byte == 0x0A:
@@ -523,7 +521,8 @@ def docker():
 
 
 def get_history():
-    h = open("docs/changelog.md").read()
+    with open("docs/changelog.md") as f:
+        h = f.read()
     # Get first version section (between first and second "## v")
     sections = h.split("\n## v")
     if len(sections) > 1:

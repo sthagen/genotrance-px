@@ -63,9 +63,9 @@ def print_banner(listen, port):
     pprint(f"Serving at {listen}:{port} proc " + multiprocessing.current_process().name)
 
     if sys.platform == "win32":
-        if config.is_compiled() or "pythonw.exe" in sys.executable:
-            if STATE.config.getint("settings", "foreground") == 0:
-                windows.detach_console(STATE)
+        is_background = config.is_compiled() or "pythonw.exe" in sys.executable
+        if is_background and STATE.config.getint("settings", "foreground") == 0:
+            windows.detach_console(STATE)
 
     dprint(f"Px v{__version__}")
     for section in STATE.config.sections():
@@ -203,8 +203,8 @@ def test(testurl):
                     pprint("Failed: Px did not start")
                     os._exit(config.ERROR_TEST)
 
-    def query(url, method="GET", data=None, quit=True, check=False, insecure=False):
-        if quit:
+    def query(url, method="GET", data=None, do_quit=True, check=False, insecure=False):
+        if do_quit:
             waitforpx()
 
         ec = mcurl.Curl(url, method)
@@ -236,7 +236,7 @@ def test(testurl):
                     pprint("Failed: response does not match " + f"{data}:\n{ret_data}")
                     os._exit(config.ERROR_TEST)
 
-        if quit:
+        if do_quit:
             os._exit(config.ERROR_SUCCESS)
 
     def queryall(testurl):
@@ -267,7 +267,7 @@ def test(testurl):
         for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
             for url in urls:
                 data = str(uuid.uuid4()) if method in ["POST", "PUT", "PATCH"] else None
-                query(url + method.lower(), method, data, quit=False, check=True, insecure=insecure)
+                query(url + method.lower(), method, data, do_quit=False, check=True, insecure=insecure)
 
         os._exit(config.ERROR_SUCCESS)
 

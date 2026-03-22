@@ -225,7 +225,7 @@ def get_listen():
 # Actions
 
 
-def quit(exit=True):
+def quit_px(do_exit=True):
     "Quit running instances of Px for loaded configuration"
     listen = get_listen()
     port = STATE.config.getint("proxy", "port")
@@ -246,20 +246,18 @@ def quit(exit=True):
             count += 1
             if count == 5:
                 pprint("Failed: Px not responding")
-                if exit:
+                if do_exit:
                     sys.exit(ERROR_QUIT)
         except ConnectionRefusedError:
             # Px not running
             pprint("Px is not running")
-            if exit:
+            if do_exit:
                 sys.exit(ERROR_QUIT)
             return False
 
-    try:
+    with contextlib.suppress(Exception):
         sys.stdout.write("Quitting Px ..")
         sys.stdout.flush()
-    except:
-        pass
 
     # Connect to Px and send quit request
     url = f"http://{listen}:{port}/PxQuit"
@@ -315,7 +313,7 @@ def quit(exit=True):
         pprint(" Failed")
 
     ret = 0 if success else ERROR_QUIT
-    if exit:
+    if do_exit:
         sys.exit(ret)
 
     return ret
@@ -376,14 +374,14 @@ class State:
     kerberos = False
     username = ""
 
-    client_auth: list = []
+    client_auth: list = []  # noqa: RUF012
     client_username = ""
     client_nosspi = False
 
     # Objects
     allow = netaddr.IPGlob("*.*.*.*")
     config = None
-    curl_features = []
+    curl_features: list = []  # noqa: RUF012
     debug = None
     krb_manager = None
     location = LOG_NONE
@@ -878,9 +876,9 @@ class State:
                 windows.uninstall()
 
         if "--quit" in sys.argv:
-            quit()
+            quit_px()
         elif "--restart" in sys.argv:
-            ret = quit(exit=False)
+            ret = quit_px(do_exit=False)
             if ret != 0:
                 sys.exit(ret)
             sys.argv.remove("--restart")

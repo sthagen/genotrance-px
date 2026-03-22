@@ -238,10 +238,11 @@ class KerberosManager:
                 capture_output=True,
                 timeout=5,
             )
-            output = (result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")).lower()
-            return "heimdal" in output
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
+        else:
+            output = (result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")).lower()
+            return "heimdal" in output
 
     def _klist_valid(self):
         """Quick check if the ticket cache is valid.

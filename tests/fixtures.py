@@ -3,7 +3,7 @@ import os
 import sys
 
 import pytest
-from helpers import *
+from helpers import *  # noqa: F403
 
 ##
 # Session scope
@@ -109,7 +109,7 @@ def px_cli_env(request):
     return request.param
 
 
-@pytest.fixture(params=PARAMS_CLI_ENV + [""])
+@pytest.fixture(params=[*PARAMS_CLI_ENV, ""])
 def px_cli_env_none(request):
     # cli or env or none = 3
     return request.param

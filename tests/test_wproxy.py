@@ -63,17 +63,17 @@ class TestParseNoproxy:
         assert len(hosts) == 0
 
     def test_cidr(self):
-        noproxy, hosts = parse_noproxy("10.0.0.0/8")
+        noproxy, _hosts = parse_noproxy("10.0.0.0/8")
         assert "10.1.2.3" in noproxy
         assert "192.168.1.1" not in noproxy
 
     def test_ip_range(self):
-        noproxy, hosts = parse_noproxy("192.168.1.1-192.168.1.10")
+        noproxy, _hosts = parse_noproxy("192.168.1.1-192.168.1.10")
         assert "192.168.1.5" in noproxy
         assert "192.168.1.11" not in noproxy
 
     def test_wildcard(self):
-        noproxy, hosts = parse_noproxy("192.168.*.*")
+        noproxy, _hosts = parse_noproxy("192.168.*.*")
         assert "192.168.1.1" in noproxy
         assert "10.0.0.1" not in noproxy
 
@@ -89,12 +89,12 @@ class TestParseNoproxy:
         assert "example.com" in hosts
 
     def test_semicolon_separator(self):
-        noproxy, hosts = parse_noproxy("127.0.0.1;192.168.1.1")
+        noproxy, _hosts = parse_noproxy("127.0.0.1;192.168.1.1")
         assert "127.0.0.1" in noproxy
         assert "192.168.1.1" in noproxy
 
     def test_space_separator(self):
-        noproxy, hosts = parse_noproxy("127.0.0.1 192.168.1.1")
+        noproxy, _hosts = parse_noproxy("127.0.0.1 192.168.1.1")
         assert "127.0.0.1" in noproxy
         assert "192.168.1.1" in noproxy
 
@@ -108,7 +108,7 @@ class TestParseNoproxy:
             parse_noproxy("example.com", iponly=True)
 
     def test_empty_entries_skipped(self):
-        noproxy, hosts = parse_noproxy("127.0.0.1,,,,192.168.1.1")
+        noproxy, _hosts = parse_noproxy("127.0.0.1,,,,192.168.1.1")
         assert "127.0.0.1" in noproxy
         assert "192.168.1.1" in noproxy
 
@@ -141,14 +141,14 @@ class TestWproxyBase:
         from px.wproxy import _WproxyBase
 
         w = _WproxyBase()
-        servers, netloc, path = w.find_proxy_for_url("http://example.com")
+        servers, _netloc, _path = w.find_proxy_for_url("http://example.com")
         assert servers == [DIRECT]
 
     def test_find_proxy_returns_servers_for_config_mode(self):
         from px.wproxy import _WproxyBase
 
         w = _WproxyBase(mode=MODE_CONFIG, servers=[("proxy.com", 8080)])
-        servers, netloc, path = w.find_proxy_for_url("http://example.com")
+        servers, _netloc, _path = w.find_proxy_for_url("http://example.com")
         assert ("proxy.com", 8080) in servers
 
     def test_noproxy_bypasses_proxy(self, monkeypatch):
@@ -161,7 +161,7 @@ class TestWproxyBase:
         monkeypatch.setattr(
             socket, "getaddrinfo", lambda host, port, *a, **kw: [(None, None, None, None, ("127.0.0.1", 80))]
         )
-        servers, netloc, path = w.find_proxy_for_url("http://127.0.0.1")
+        servers, _netloc, _path = w.find_proxy_for_url("http://127.0.0.1")
         assert servers == [DIRECT]
 
     def test_noproxy_hosts_str_cached(self):
@@ -184,19 +184,19 @@ class TestWproxyBase:
         from px.wproxy import _WproxyBase
 
         w = _WproxyBase()
-        netloc, path = w.get_netloc("http://example.com/page")
+        netloc, _path = w.get_netloc("http://example.com/page")
         assert netloc == ("example.com", 80)
 
     def test_get_netloc_https_default_port(self):
         from px.wproxy import _WproxyBase
 
         w = _WproxyBase()
-        netloc, path = w.get_netloc("https://example.com/page")
+        netloc, _path = w.get_netloc("https://example.com/page")
         assert netloc == ("example.com", 443)
 
     def test_get_netloc_preserves_query(self):
         from px.wproxy import _WproxyBase
 
         w = _WproxyBase()
-        netloc, path = w.get_netloc("http://example.com/path?key=val")
+        _netloc, path = w.get_netloc("http://example.com/path?key=val")
         assert "?key=val" in path

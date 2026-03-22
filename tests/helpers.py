@@ -8,11 +8,6 @@ import time
 
 import keyring
 
-try:
-    ConnectionRefusedError
-except NameError:
-    ConnectionRefusedError = socket.error
-
 
 @contextlib.contextmanager
 def change_dir(path):
@@ -36,9 +31,10 @@ def px_print_env(cmd, env=os.environ):
 def is_port_free(port):
     try:
         socket.create_connection(("127.0.0.1", port), 1)
-        return False
     except (TimeoutError, ConnectionRefusedError):
         return True
+    else:
+        return False
 
 
 def can_connect(ip, port, timeout=2):
@@ -46,9 +42,10 @@ def can_connect(ip, port, timeout=2):
     try:
         s = socket.create_connection((ip, port), timeout)
         s.close()
-        return True
     except (TimeoutError, ConnectionRefusedError, OSError):
         return False
+    else:
+        return True
 
 
 def find_free_port(start=4000):
