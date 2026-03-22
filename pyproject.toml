@@ -81,15 +81,12 @@ passenv = ["PXBIN", "DBUS_SESSION_BUS_ADDRESS", "PX_CI_MINIMAL"]
 files = ["px"]
 disallow_untyped_defs = false
 no_implicit_optional = true
-check_untyped_defs = false
+check_untyped_defs = true
 warn_return_any = false
 warn_unused_ignores = true
 show_error_codes = true
 ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["px.*"]
-ignore_errors = true
+disable_error_code = ["union-attr", "attr-defined"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

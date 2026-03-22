@@ -60,8 +60,8 @@ class KerberosManager:
         self._env = os.environ.copy()
 
         # Timing state
-        self.ticket_expiry = 0
-        self.next_check = 0
+        self.ticket_expiry = 0.0
+        self.next_check = 0.0
         self.backoff = 0
 
         atexit.register(self._cleanup)
@@ -309,7 +309,7 @@ class KerberosManager:
         """
         output = self._run_klist()
         if output is None:
-            self.ticket_expiry = 0
+            self.ticket_expiry = 0.0
             self.next_check = time.time() + RETRY_INTERVAL
             return
 
@@ -319,7 +319,7 @@ class KerberosManager:
             self.next_check = min(time.time() + CHECK_INTERVAL, expiry - RENEWAL_MARGIN)
         else:
             self.dprint("Kerberos: could not parse ticket expiry from klist output")
-            self.ticket_expiry = 0
+            self.ticket_expiry = 0.0
             self.next_check = time.time() + RETRY_INTERVAL
 
     def _parse_expiry(self, output):

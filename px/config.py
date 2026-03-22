@@ -202,7 +202,7 @@ def file_url_to_local_path(file_url):
 
 def get_listen():
     "Get local interface that Px will listen on"
-    listen = STATE.listen[0]
+    listen = STATE.listen[0]  # type: ignore[index]
     if len(listen) == 0:
         # Listening on all interfaces - figure out which one is allowed
         hostips = get_host_ips()
@@ -390,7 +390,7 @@ class State:
     wproxy = None
 
     # Tracking
-    proxy_last_reload = 0
+    proxy_last_reload = 0.0
 
     # Lock for thread synchronization of State object
     # multiprocess sync isn't neccessary because State object is only shared by
@@ -666,7 +666,7 @@ class State:
 
         # Non-config
         elif name in ["test"] and callback is not None:
-            callback(val)
+            callback(val)  # type: ignore[operator]
 
     def save(self):
         "Save config to file"

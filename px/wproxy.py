@@ -41,7 +41,7 @@ def parse_proxy(proxystrs):
       Raises ValueError if bad proxy format
     """
 
-    servers = []
+    servers: list[tuple] = []
 
     if proxystrs is None or len(proxystrs) == 0:
         return servers
@@ -72,7 +72,7 @@ def parse_noproxy(noproxystr, iponly=False):
     """
 
     noproxy = netaddr.IPSet([])
-    noproxy_hosts = set()
+    noproxy_hosts: set[str] = set()
 
     if noproxystr is None or len(noproxystr) == 0:
         return noproxy, noproxy_hosts
@@ -126,7 +126,7 @@ class _WproxyBase:
     """
 
     mode = MODE_NONE
-    servers = None
+    servers: list[tuple] | None = None
     noproxy = None
     noproxy_hosts = None
     noproxy_hosts_str = None
@@ -217,7 +217,7 @@ class _WproxyBase:
                 ipport = addr[0][4]
                 # "%s => %s + %s" % (url, ipport, path)
 
-                if ipport[0] in self.noproxy:
+                if ipport[0] in self.noproxy:  # type: ignore[operator]
                     # Direct connection from noproxy configuration
                     return ipport
 
@@ -251,7 +251,7 @@ class _WproxyBase:
 
         if self.mode in (MODE_ENV, MODE_CONFIG):
             # Return proxy from environment or configuration
-            return self.servers[:], netloc, path
+            return self.servers[:], netloc, path  # type: ignore[index]
 
         if self.mode == MODE_CONFIG_PAC:
             # Return proxy from configured PAC URL/file

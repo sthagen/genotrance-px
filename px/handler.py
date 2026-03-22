@@ -41,10 +41,10 @@ def _get_credential(store, domain, username):
         nthash = ntowfv1(password)
         return domain, username, lmhash, nthash
 
-    raise spnego.exceptions.SpnegoError(spnego.exceptions.ErrorCode.failure, "Bad credentials")
+    raise spnego.exceptions.SpnegoError(spnego.exceptions.ErrorCode.failure, "Bad credentials")  # type: ignore[arg-type]
 
 
-spnego._ntlm._get_credential = _get_credential
+spnego._ntlm._get_credential = _get_credential  # type: ignore[assignment]
 
 
 def _get_credential_file():
@@ -306,7 +306,7 @@ class PxHandler(http.server.BaseHTTPRequestHandler):
             return netloc
         else:
             dprint(self.curl.easyhash + ": Proxy = " + str(servers))
-            self.proxy_servers = servers
+            self.proxy_servers = servers  # type: ignore[misc]
             return None
 
     # Client authentication

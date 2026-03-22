@@ -54,7 +54,7 @@ class ThreadedTCPServer(PoolMixIn, socketserver.TCPServer):
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
         socketserver.TCPServer.__init__(self, server_address, RequestHandlerClass, bind_and_activate)
 
-        self.pool = concurrent.futures.ThreadPoolExecutor(
+        self.pool = concurrent.futures.ThreadPoolExecutor(  # type: ignore[assignment]
             max_workers=STATE.config.getint("settings", "threads"), thread_name_prefix="Thread"
         )
 
