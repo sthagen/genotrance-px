@@ -14,6 +14,8 @@
 - Fixed auth failure recovery when a Kerberos ticket becomes available after Px
   startup — clearing `MCURL.failed` allows previously-blocked proxies to be
   retried (#258).
+- Fixed `--verbose` output not appearing in non-TTY environments (e.g. Docker
+  with `workers=1`) due to Python block-buffering stdout.
 
 ### Docker
 - Added `BUILDER` build arg and local builder stage to `Dockerfile` to support

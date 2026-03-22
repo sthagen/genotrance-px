@@ -43,7 +43,7 @@ class Debug:
         if len(name) != 0:
             self.name = name
             self.mode = mode
-            self.reopen()
+        self.reopen()
 
     def reopen(self):
         "Restart debug redirection - can be called after self.close()"

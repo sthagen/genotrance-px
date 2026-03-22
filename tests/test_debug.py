@@ -69,6 +69,20 @@ class TestDebugClass:
         d1 = Debug()
         d2 = Debug()
         assert d1 is d2
+        d1.close()
+
+    def test_verbose_mode_redirects_stdout(self):
+        """Debug() with no filename (verbose mode) must redirect sys.stdout."""
+        original = sys.stdout
+        d = Debug()
+        try:
+            assert sys.stdout is d, "sys.stdout should be the Debug instance"
+            assert sys.stderr is d, "sys.stderr should be the Debug instance"
+            assert d.stdout is original, "Debug.stdout should be the original stdout"
+            assert d.file is None, "No file should be opened in verbose mode"
+        finally:
+            d.close()
+        assert sys.stdout is original
 
     def test_write_to_file(self, tmp_path):
         logfile = str(tmp_path / "test.log")
