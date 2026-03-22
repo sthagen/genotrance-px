@@ -48,7 +48,7 @@ class KerberosManager:
         self.password_func = password_func
         self.dprint = debug_print or (lambda *a, **kw: None)
 
-        self._is_heimdal = sys.platform == "darwin"
+        self._is_heimdal = self._detect_heimdal()
         self._lock = threading.Lock()
 
         # Credential cache isolated per process
@@ -228,6 +228,21 @@ class KerberosManager:
         self._update_expiry()
         return True
 
+    def _detect_heimdal(self):
+        """Detect whether the installed Kerberos is Heimdal or MIT.
+        Runs 'klist --version' and checks for 'heimdal' in the output.
+        """
+        try:
+            result = subprocess.run(
+                ["klist", "--version"],
+                capture_output=True,
+                timeout=5,
+            )
+            output = (result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")).lower()
+            return "heimdal" in output
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
     def _klist_valid(self):
         """Quick check if the ticket cache is valid.
         Tries klist -s (MIT) or klist --test (Heimdal) first.
@@ -289,7 +304,7 @@ class KerberosManager:
     def _update_expiry(self):
         """Parse klist output to extract ticket expiry timestamp.
         Sets self.ticket_expiry and self.next_check.
-        Handles MIT krb5 (Linux) and Heimdal (macOS) output formats.
+        Handles MIT krb5 and Heimdal output formats.
         """
         output = self._run_klist()
         if output is None:
@@ -329,7 +344,7 @@ class KerberosManager:
         The expiry is the second date/time pair.
         """
         # MIT format: MM/DD/YYYY HH:MM:SS or MM/DD/YY HH:MM:SS
-        pattern = r"(\d{2}/\d{2}/\d{2,4}\s+\d{2}:\d{2}:\d{2})\s+(\d{2}/\d{2}/\d{2,4}\s+\d{2}:\d{2}:\d{2})"
+        pattern = r"(\d{1,2}/\d{1,2}/\d{2,4}\s+\d{2}:\d{2}:\d{2})\s+(\d{1,2}/\d{1,2}/\d{2,4}\s+\d{2}:\d{2}:\d{2})"
         match = re.search(pattern, line)
         if match:
             expiry_str = match.group(2)

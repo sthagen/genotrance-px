@@ -116,6 +116,8 @@ make test
 | `make install` | Create venv, install dependencies, install pre-commit hooks |
 | `make check` | Run linters (ruff) and type checking (mypy) |
 | `make test` | Run tests with coverage |
+| `make docker` | Build local Docker images (full and mini) |
+| `make test-kerberos` | Build KDC images and run Kerberos integration tests |
 | `make build` | Build sdist and wheel |
 | `make clean` | Remove build artifacts |
 

@@ -132,8 +132,8 @@ ignore = [
 "px/config.py" = ["A001", "A002", "C901", "E722", "RUF012", "S110"]
 # A002: format param shadows builtin (BaseHTTPRequestHandler API); C901: complex functions; E402: import after monkey-patch; S324: md5 required by HTTP digest; SIM102/SIM108: readability
 "px/handler.py" = ["A002", "C901", "E402", "S324", "SIM102", "SIM108"]
-# S603/S607: kinit/klist subprocess calls are intentional and safe
-"px/kerberos.py" = ["S603", "S607"]
+# S603/S607: kinit/klist subprocess calls are intentional and safe; TRY300: return in try is idiomatic for _detect_heimdal
+"px/kerberos.py" = ["S603", "S607", "TRY300"]
 # S603/S607: docker subprocess calls in integration tests are intentional
 "tests/test_kerberos.py" = ["S603", "S607"]
 # A002: quit param shadows builtin; C901: complex test function; E722: intentional bare except; SIM102: readability

@@ -16,14 +16,10 @@
   retried (#258).
 
 ### Docker
-- Consolidated `Dockerfile` and `Dockerfile-mini` into a single multi-stage
-  `Dockerfile` with a `mini` build target.
-- Added `BUILDER` build arg to support both CI (pre-built wheel) and local
-  (source tree) builds.
+- Added `BUILDER` build arg and local builder stage to `Dockerfile` to support
+  both CI (pre-built wheel) and local (source tree) builds.
 - The full Docker image now requires `--cap-add IPC_LOCK` — gnome-keyring 48+
   (Alpine 3.23+) links libcap-ng which aborts without the `IPC_LOCK` capability.
-- Gracefully handle keyring failures in `get_password()` so Px logs the error
-  and falls back instead of crashing.
 
 ### Improvements
 - Reduced per-request overhead in `reload_proxy()` with double-checked locking

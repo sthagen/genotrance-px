@@ -173,53 +173,70 @@ in reports.
 The unit tests in `test_kerberos.py` mock all subprocess calls to verify the
 `KerberosManager` logic in isolation. The same file also contains Docker-based
 integration tests that exercise the real Kerberos stack against local KDCs —
-both MIT krb5 (Linux) and Heimdal (macOS).
+both MIT krb5 and Heimdal.
 
 ### How it works
 
 Two test classes run against separate KDCs:
 
 **MIT KDC tests** (`TestKerberosIntegration`) — a `kdc` pytest fixture
-(module-scoped) starts a throwaway Alpine container running an MIT KDC with a
-`TEST.LOCAL` realm and a test principal. Each test runs `docker run` against
-the px image, mounts a generated `krb5.conf` pointing at the KDC container's
-IP, starts gnome-keyring inside the container, stores a password via keyring,
-and then exercises the `KerberosManager` Python code. Nine tests cover ticket
-acquisition, renewal, expiry parsing (2-digit year), klist validity, ccache
-cleanup, wrong password, bad principal, and force-retry after failure.
+(module-scoped) starts a throwaway container from the pre-built `px-test-mit-kdc`
+image running an MIT KDC with a `TEST.LOCAL` realm and a test principal. Each
+test runs `docker run` against the px image with `--network host`, mounts a
+generated `krb5.conf`, starts gnome-keyring inside the container, stores a
+password via keyring, and then exercises the `KerberosManager` Python code.
+Nine tests cover ticket acquisition, renewal, expiry parsing (4-digit year,
+2-digit year), klist validity, ccache cleanup, wrong password, bad principal,
+and force-retry after failure.
 
 **Heimdal KDC tests** (`TestHeimdalKerberosIntegration`) — a `heimdal_kdc`
-fixture starts a Debian container running a Heimdal KDC, and a
-`heimdal_client_image` fixture builds a temporary Docker image with px
-installed from source alongside Heimdal client tools (instead of MIT krb5).
-Five tests verify ticket acquisition, Heimdal-format expiry parsing (`Mon DD
-HH:MM:SS YYYY`), `klist --test` validity check, and wrong password handling.
-This ensures px works correctly with macOS-style Kerberos output.
+fixture starts a container from the pre-built `px-test-heimdal-kdc` image
+running a Heimdal KDC, and tests run in the pre-built `px-test-heimdal-client`
+image which has px installed from source alongside Heimdal client tools. Five
+tests verify ticket acquisition, Heimdal-format expiry parsing (`Mon DD
+HH:MM:SS YYYY`), `klist --test` validity check, wrong password handling, and
+automatic Heimdal detection via `klist --version`.
+
+All containers use `--network host` so the KDC is accessible at `localhost`
+from both the test runner and other containers.
+
+### Docker images
+
+Pre-built Docker images avoid installing packages at container runtime:
+
+- `px-test-mit-kdc` — built from `docker/Dockerfile.mit-kdc` (Alpine +
+  krb5-server).
+- `px-test-heimdal-kdc` — built from `docker/Dockerfile.heimdal-kdc` (Debian +
+  heimdal-kdc).
+- `px-test-heimdal-client` — built from `docker/Dockerfile.heimdal-client`
+  (python:alpine + Heimdal client + px from source).
+
+KDC setup scripts configure the realm and start the daemon at container
+startup.
 
 ### Running
 
 Integration tests are marked with `@pytest.mark.integration` and excluded from
-the default test run via `addopts` in `pyproject.toml`. They are also skipped
-when the `CI` environment variable is set to `true` (GitHub Actions). To run
-them locally:
+the default test run via `addopts` in `pyproject.toml`. To run them locally:
 
 ```bash
-# Build the px Docker images then run only the integration tests
+# Build all Docker images then run the integration tests
 make test-kerberos
 
 # Or run them directly (assumes images are already built)
 uv run python -m pytest tests/test_kerberos.py -m integration -v
 ```
 
-The KDC containers, Heimdal client image, and all temp files are cleaned up
-automatically by fixture teardown.
+### CI
+
+The `kerberos` job in `ci.yml` runs the integration tests on every push to
+`devel`/`working` and on pull requests. It builds the Docker images and runs
+`make test-kerberos` on `ubuntu-latest`.
 
 ### Requirements
 
-- Docker with access to the default bridge network (containers must be able to
-  reach each other by IP).
-- A locally-built px image (`make docker`). If the image is missing, the MIT
-  tests are skipped with a clear message. The Heimdal tests build their own
-  client image from source automatically.
+- Docker daemon running (containers use `--network host`).
+- Pre-built Docker images (`make docker-kerberos`). If images are missing, the
+  tests are skipped with a clear message.
 - The `--cap-add IPC_LOCK` capability is passed to the px container so that
   `gnome-keyring-daemon` can lock memory pages for secure credential storage.

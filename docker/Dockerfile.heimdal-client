@@ -1,0 +1,5 @@
+# Heimdal client + px from source for integration tests
+FROM python:alpine
+RUN apk add --no-cache heimdal dbus gnome-keyring tini
+COPY . /src
+RUN pip install /src

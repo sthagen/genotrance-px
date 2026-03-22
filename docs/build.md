@@ -49,6 +49,10 @@ Runs on pushes to the `devel` branch and on pull requests (fast feedback loop).
   Uses the shared `.github/actions/setup-python-env` action for consistent
   environment setup. macOS excludes `test_network.py` due to GitHub Actions
   environment limitations.
+- **kerberos** — builds the KDC Docker images (`make docker-kerberos`) and runs
+  the Kerberos integration tests against local MIT and Heimdal KDCs on
+  Ubuntu. Exercises real ticket acquisition, renewal, expiry parsing, and
+  Heimdal detection.
 
 ### Build (`build.yml`)
 
@@ -138,6 +142,20 @@ credentials are stored as repository secrets (`DOCKERHUB_USERNAME` and
 CI uses the default (`ci`) which installs from pre-built wheel archives. Local
 builds use `BUILDER=local` which copies the source tree and runs `pip install`.
 Run `make docker` to build both images locally.
+
+Three additional Dockerfiles support the Kerberos integration test
+infrastructure:
+
+- `docker/Dockerfile.mit-kdc` — Alpine with MIT krb5-server for the MIT KDC
+  test fixture.
+- `docker/Dockerfile.heimdal-kdc` — Debian with heimdal-kdc for the Heimdal
+  KDC test fixture.
+- `docker/Dockerfile.heimdal-client` — python:alpine with Heimdal client
+  libraries and px installed from source, used to run integration tests against
+  the Heimdal KDC.
+
+Run `make docker-kerberos` to build all five images (px full, px mini, and the
+three test images). `make test-kerberos` depends on this target.
 
 ## Dependabot
 

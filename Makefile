@@ -26,13 +26,19 @@ test-glibc: ## Build and test in glibc (manylinux) containers
 
 .PHONY: docker
 docker: ## Build local Docker images (full and mini)
-	docker build -f docker/Dockerfile --build-arg BUILDER=local \
+	docker build -f docker/Dockerfile --network host --build-arg BUILDER=local \
 		--target mini -t $(TAG):$(VERSION)-mini -t $(TAG):latest-mini .
-	docker build -f docker/Dockerfile --build-arg BUILDER=local \
+	docker build -f docker/Dockerfile --network host --build-arg BUILDER=local \
 		-t $(TAG):$(VERSION) -t $(TAG):latest .
 
+.PHONY: docker-kerberos
+docker-kerberos: docker ## Build Docker images for Kerberos integration tests
+	docker build -f docker/Dockerfile.mit-kdc --network host -t px-test-mit-kdc .
+	docker build -f docker/Dockerfile.heimdal-kdc --network host -t px-test-heimdal-kdc .
+	docker build -f docker/Dockerfile.heimdal-client --network host -t px-test-heimdal-client .
+
 .PHONY: test-kerberos
-test-kerberos: docker ## Run Kerberos integration tests against a local KDC in Docker
+test-kerberos: docker-kerberos ## Run Kerberos integration tests against a local KDC in Docker
 	@uv run python -m pytest tests/test_kerberos.py -m integration -v
 
 .PHONY: build

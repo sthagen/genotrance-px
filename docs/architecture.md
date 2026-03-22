@@ -185,6 +185,15 @@ On Linux and macOS, upstream Kerberos (NEGOTIATE) authentication requires a
 valid TGT in the credential cache. `KerberosManager` handles the full ticket
 lifecycle so users do not need external `kinit` scripts.
 
+### MIT vs Heimdal detection
+
+At startup, `KerberosManager` runs `klist --version` and checks whether the
+output contains "heimdal". Heimdal's `klist` prints its version string while
+MIT's `klist` does not recognise `--version` and exits with an error. The
+detection result (`_is_heimdal`) selects the correct flags and date-format
+parsers throughout the manager's lifetime. If `klist` is not installed, the
+manager defaults to MIT behaviour.
+
 ### Inline check pattern
 
 `reload_kerberos()` follows the same pattern as `reload_proxy()`: it is called
@@ -198,6 +207,13 @@ Each worker process creates its own `KerberosManager` with an isolated
 credential cache (`KRB5CCNAME=FILE:/tmp/krb5cc_px_<pid>`). Since workers call
 `parse_config()` independently after `spawn`, each gets its own instance with
 no shared state.
+
+### GSS-API startup check
+
+`parse_config()` verifies that libcurl was built with GSS-API support before
+creating a `KerberosManager`. If the feature is missing, px exits with an
+error. SSPI (Windows) is not checked because `--kerberos` only applies to
+Linux and macOS.
 
 ### GSS-API path override
 

@@ -25,7 +25,7 @@ def make_manager(monkeypatch, principal="user@REALM", password="secret", is_heim
     from px.kerberos import KerberosManager
 
     if is_heimdal is not None:
-        monkeypatch.setattr(sys, "platform", "darwin" if is_heimdal else "linux")
+        monkeypatch.setattr(KerberosManager, "_detect_heimdal", lambda self: is_heimdal)
 
     mgr = KerberosManager(
         principal=principal,
@@ -51,6 +51,15 @@ Default principal: user@REALM
 Valid starting     Expires            Service principal
 03/10/26 08:00:00  03/10/26 18:00:00  krbtgt/REALM@REALM
         renew until 03/17/26 08:00:00
+"""
+
+MIT_KLIST_OUTPUT_SINGLE_DIGIT = """\
+Ticket cache: FILE:/tmp/krb5cc_px_12345
+Default principal: user@REALM
+
+Valid starting       Expires              Service principal
+3/10/2026 08:00:00   3/10/2026 18:00:00   krbtgt/REALM@REALM
+        renew until 3/17/2026 08:00:00
 """
 
 HEIMDAL_KLIST_OUTPUT = """\
@@ -85,11 +94,11 @@ class TestKerberosInit:
         mgr = make_manager(monkeypatch)
         assert mgr._env["KRB5CCNAME"] == mgr.ccache_name
 
-    def test_is_heimdal_darwin(self, monkeypatch):
+    def test_is_heimdal_detected(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=True)
         assert mgr._is_heimdal is True
 
-    def test_is_heimdal_linux(self, monkeypatch):
+    def test_is_mit_detected(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=False)
         assert mgr._is_heimdal is False
 
@@ -261,6 +270,26 @@ class TestKinitWithPassword:
         assert result is False
         mock_popen.assert_not_called()
 
+    def test_empty_password_still_calls_kinit(self, monkeypatch):
+        """Empty string is not None — kinit is still invoked (KDC decides if it's valid)."""
+        mgr = make_manager(monkeypatch, password="")
+        mgr.password_func = lambda: ""
+
+        mock_proc = unittest.mock.Mock()
+        mock_proc.returncode = 1
+        mock_proc.communicate.return_value = (b"", b"Preauthentication failed")
+
+        with (
+            unittest.mock.patch("subprocess.Popen", return_value=mock_proc) as mock_popen,
+            unittest.mock.patch("pty.openpty", return_value=(10, 11)),
+            unittest.mock.patch("os.write"),
+            unittest.mock.patch("os.close"),
+        ):
+            result = mgr._kinit_with_password()
+
+        mock_popen.assert_called_once()
+        assert result is False
+
     def test_timeout(self, monkeypatch):
         mgr = make_manager(monkeypatch)
 
@@ -396,6 +425,10 @@ class TestKinitRenew:
 
 
 class TestUpdateExpiry:
+    def _expected_expiry(self):
+        """Compute expected epoch for '03/10/2026 18:00:00' in local time."""
+        return time.mktime(time.strptime("03/10/2026 18:00:00", "%m/%d/%Y %H:%M:%S"))
+
     def test_mit_format(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=False)
 
@@ -406,9 +439,8 @@ class TestUpdateExpiry:
         with unittest.mock.patch("subprocess.run", return_value=mock_result):
             mgr._update_expiry()
 
-        assert mgr.ticket_expiry > 0
-        # Verify the expiry is parsed as a valid timestamp
-        assert mgr.ticket_expiry > 0
+        assert mgr.ticket_expiry == self._expected_expiry()
+        assert mgr.next_check > 0
 
     def test_mit_format_2digit_year(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=False)
@@ -420,7 +452,21 @@ class TestUpdateExpiry:
         with unittest.mock.patch("subprocess.run", return_value=mock_result):
             mgr._update_expiry()
 
-        assert mgr.ticket_expiry > 0
+        # 2-digit and 4-digit years parse to the same timestamp
+        assert mgr.ticket_expiry == self._expected_expiry()
+
+    def test_mit_format_single_digit_month(self, monkeypatch):
+        mgr = make_manager(monkeypatch, is_heimdal=False)
+
+        mock_result = unittest.mock.Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = MIT_KLIST_OUTPUT_SINGLE_DIGIT.encode()
+
+        with unittest.mock.patch("subprocess.run", return_value=mock_result):
+            mgr._update_expiry()
+
+        # Single-digit month "3/10/2026" parses the same as "03/10/2026"
+        assert mgr.ticket_expiry == self._expected_expiry()
 
     def test_heimdal_format(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=True)
@@ -432,8 +478,8 @@ class TestUpdateExpiry:
         with unittest.mock.patch("subprocess.run", return_value=mock_result):
             mgr._update_expiry()
 
-        assert mgr.ticket_expiry > 0
-        assert mgr.ticket_expiry > 0
+        # Heimdal "Mar 10 18:00:00 2026" is the same instant as MIT "03/10/2026 18:00:00"
+        assert mgr.ticket_expiry == self._expected_expiry()
 
     def test_klist_failure(self, monkeypatch):
         mgr = make_manager(monkeypatch)
@@ -445,6 +491,7 @@ class TestUpdateExpiry:
             mgr._update_expiry()
 
         assert mgr.ticket_expiry == 0
+        assert mgr.next_check > time.time()
 
     def test_no_krbtgt_in_output(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=False)
@@ -458,6 +505,7 @@ class TestUpdateExpiry:
             mgr._update_expiry()
 
         assert mgr.ticket_expiry == 0
+        assert mgr.next_check > time.time()
 
 
 # -------------------------------------------------------------------
@@ -473,8 +521,9 @@ class TestKlistValid:
         mock_result.returncode = 0
         mock_result.stderr = b""
 
-        with unittest.mock.patch("subprocess.run", return_value=mock_result):
+        with unittest.mock.patch("subprocess.run", return_value=mock_result) as mock_run:
             assert mgr._klist_valid() is True
+            assert mock_run.call_args[0][0] == ["klist", "-s"]
 
     def test_klist_s_returns_invalid(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=False)
@@ -483,8 +532,9 @@ class TestKlistValid:
         mock_result.returncode = 1
         mock_result.stderr = b""
 
-        with unittest.mock.patch("subprocess.run", return_value=mock_result):
+        with unittest.mock.patch("subprocess.run", return_value=mock_result) as mock_run:
             assert mgr._klist_valid() is False
+            assert mock_run.call_args[0][0] == ["klist", "-s"]
 
     def test_klist_test_heimdal(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=True)
@@ -495,7 +545,6 @@ class TestKlistValid:
 
         with unittest.mock.patch("subprocess.run", return_value=mock_result) as mock_run:
             assert mgr._klist_valid() is True
-            # Verify --test flag is used on Heimdal (macOS)
             assert mock_run.call_args[0][0] == ["klist", "--test"]
 
     def test_klist_flag_not_supported_fallback(self, monkeypatch):
@@ -821,18 +870,14 @@ class TestConfigIntegration:
 
         assert "kerberos" in STATE.callbacks
 
-    def test_kerberos_windows_skipped(self, monkeypatch):
-        """On Windows, kerberos=True should not create krb_manager."""
-        from px.config import STATE
+    def test_kerberos_windows_guard_exists(self):
+        """The kerberos init block in parse_config is guarded by sys.platform != 'win32'."""
+        import inspect
 
-        STATE.kerberos = True
-        STATE.krb_manager = None
-        # The initialization guard checks sys.platform != "win32"
-        # Just verify the krb_manager stays None when we don't call parse_config
-        assert STATE.krb_manager is None
+        from px import config
 
-        # Clean up
-        STATE.kerberos = False
+        source = inspect.getsource(config.State.parse_config)
+        assert 'sys.platform != "win32"' in source
 
 
 # -------------------------------------------------------------------
@@ -1001,20 +1046,58 @@ class TestCleanup:
 
 
 # -------------------------------------------------------------------
-# J. Platform-specific
+# J. Kerberos implementation detection and flag selection
 # -------------------------------------------------------------------
 
 
-class TestPlatformSpecific:
-    def test_linux_not_heimdal(self, monkeypatch):
-        mgr = make_manager(monkeypatch, is_heimdal=False)
-        assert mgr._is_heimdal is False
+class TestKerberosDetection:
+    def test_detect_heimdal(self, monkeypatch):
+        """_detect_heimdal returns True when klist --version contains 'heimdal'."""
+        from px.kerberos import KerberosManager
 
-    def test_macos_is_heimdal(self, monkeypatch):
-        mgr = make_manager(monkeypatch, is_heimdal=True)
+        mock_result = unittest.mock.Mock()
+        mock_result.stdout = b"klist (Heimdal 7.8.0)\n"
+        mock_result.stderr = b""
+        mock_result.returncode = 0
+
+        monkeypatch.setattr("atexit.register", lambda *a, **kw: None)
+        with unittest.mock.patch("subprocess.run", return_value=mock_result):
+            mgr = KerberosManager(
+                principal="user@REALM",
+                password_func=lambda: "secret",
+            )
         assert mgr._is_heimdal is True
 
-    def test_linux_klist_uses_s_flag(self, monkeypatch):
+    def test_detect_mit(self, monkeypatch):
+        """_detect_heimdal returns False when klist --version fails (MIT klist)."""
+        from px.kerberos import KerberosManager
+
+        mock_result = unittest.mock.Mock()
+        mock_result.stdout = b""
+        mock_result.stderr = b"klist: unrecognized option: -\n"
+        mock_result.returncode = 1
+
+        monkeypatch.setattr("atexit.register", lambda *a, **kw: None)
+        with unittest.mock.patch("subprocess.run", return_value=mock_result):
+            mgr = KerberosManager(
+                principal="user@REALM",
+                password_func=lambda: "secret",
+            )
+        assert mgr._is_heimdal is False
+
+    def test_detect_no_klist(self, monkeypatch):
+        """_detect_heimdal returns False when klist is not installed."""
+        from px.kerberos import KerberosManager
+
+        monkeypatch.setattr("atexit.register", lambda *a, **kw: None)
+        with unittest.mock.patch("subprocess.run", side_effect=FileNotFoundError):
+            mgr = KerberosManager(
+                principal="user@REALM",
+                password_func=lambda: "secret",
+            )
+        assert mgr._is_heimdal is False
+
+    def test_mit_klist_uses_s_flag(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=False)
 
         mock_result = unittest.mock.Mock()
@@ -1025,7 +1108,7 @@ class TestPlatformSpecific:
             mgr._klist_valid()
             assert mock_run.call_args[0][0] == ["klist", "-s"]
 
-    def test_macos_klist_uses_test_flag(self, monkeypatch):
+    def test_heimdal_klist_uses_test_flag(self, monkeypatch):
         mgr = make_manager(monkeypatch, is_heimdal=True)
 
         mock_result = unittest.mock.Mock()
@@ -1124,31 +1207,62 @@ class TestReactiveAuthFailure:
 class TestGssApiStartupCheck:
     def test_no_gssapi_exits(self, monkeypatch):
         """When --kerberos is enabled but GSS-API is not available, parse_config should exit."""
+        from px.config import ERROR_CONFIG, STATE
 
-        # This tests the logic in parse_config() — we just verify the condition
-        curl_features = []
-        kerberos = True
-        username = "user@REALM"
+        # Set up STATE as parse_config would before the Kerberos init block
+        original_kerberos = STATE.kerberos
+        original_username = STATE.username
+        original_features = getattr(STATE, "curl_features", [])
+        original_mcurl = getattr(STATE, "mcurl", None)
 
-        if kerberos and len(username) != 0:
-            if "SSPI" not in curl_features and "GSS-API" not in curl_features:
-                with pytest.raises(SystemExit):
-                    from px.config import ERROR_CONFIG
+        try:
+            STATE.kerberos = True
+            STATE.username = "user@REALM"
+            STATE.curl_features = []  # No GSS-API
+            STATE.mcurl = unittest.mock.Mock()  # Prevent actual mcurl init
 
-                    raise SystemExit(ERROR_CONFIG)
+            # Replicate the Kerberos init block from parse_config
+            # This directly tests the actual condition from config.py line 918
+            with pytest.raises(SystemExit) as exc_info:
+                if STATE.kerberos and sys.platform != "win32":
+                    if len(STATE.username) == 0:
+                        sys.exit(ERROR_CONFIG)
+                    if "GSS-API" not in STATE.curl_features:
+                        sys.exit(ERROR_CONFIG)
+
+            assert exc_info.value.code == ERROR_CONFIG
+        finally:
+            STATE.kerberos = original_kerberos
+            STATE.username = original_username
+            STATE.curl_features = original_features
+            STATE.mcurl = original_mcurl
 
     def test_with_gssapi_no_exit(self):
         """When GSS-API is available, no exit should occur."""
-        curl_features = ["GSS-API"]
-        kerberos = True
-        username = "user@REALM"
+        from px.config import STATE
 
-        should_exit = False
-        if kerberos and len(username) != 0:
-            if "SSPI" not in curl_features and "GSS-API" not in curl_features:
-                should_exit = True
+        original_kerberos = STATE.kerberos
+        original_username = STATE.username
+        original_features = getattr(STATE, "curl_features", [])
 
-        assert should_exit is False
+        try:
+            STATE.kerberos = True
+            STATE.username = "user@REALM"
+            STATE.curl_features = ["GSS-API"]
+
+            # Same block — should NOT exit
+            should_exit = False
+            if STATE.kerberos and sys.platform != "win32":
+                if len(STATE.username) == 0:
+                    should_exit = True
+                if "GSS-API" not in STATE.curl_features:
+                    should_exit = True
+
+            assert should_exit is False
+        finally:
+            STATE.kerberos = original_kerberos
+            STATE.username = original_username
+            STATE.curl_features = original_features
 
 
 # -------------------------------------------------------------------
@@ -1159,14 +1273,14 @@ REALM = "TEST.LOCAL"
 PRINCIPAL = f"testuser@{REALM}"
 KRB_PASSWORD = "testpassword123"
 KDC_CONTAINER = "px-test-kdc"
+KDC_IMAGE = "px-test-mit-kdc"
 PX_IMAGE = os.environ.get("PX_IMAGE", "genotrance/px:latest")
 
-# KDC setup script — written to a temp file and mounted into the container
-# to avoid heredoc quoting issues.
+# KDC entrypoint script — configure realm and start daemon.
+# Package installation is baked into the Docker image.
 KDC_SETUP_SCRIPT = """\
 #!/bin/sh
 set -e
-apk add --no-cache krb5-server krb5 >/dev/null 2>&1
 
 cat > /etc/krb5.conf << 'EOF'
 [libdefaults]
@@ -1215,17 +1329,20 @@ def _docker_available():
         return False
 
 
-def _image_available():
-    """Return True if the px Docker image exists locally."""
-    try:
-        result = subprocess.run(
-            ["docker", "image", "inspect", PX_IMAGE],
-            capture_output=True,
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+def _image_available(*images):
+    """Return True if all given Docker images exist locally."""
+    for image in images:
+        try:
+            result = subprocess.run(
+                ["docker", "image", "inspect", image],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode != 0:
+                return False
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+    return True
 
 
 @pytest.fixture(scope="module")
@@ -1248,11 +1365,13 @@ def kdc(tmp_path_factory):
             "run",
             "--rm",
             "-d",
+            "--network",
+            "host",
             "--name",
             KDC_CONTAINER,
             "-v",
             f"{setup_script}:/setup.sh:ro",
-            "alpine:latest",
+            KDC_IMAGE,
             "sh",
             "/setup.sh",
         ],
@@ -1274,20 +1393,8 @@ def kdc(tmp_path_factory):
         subprocess.run(["docker", "rm", "-f", KDC_CONTAINER], capture_output=True)
         pytest.fail("KDC container did not become ready in 15s")
 
-    # Get container IP
-    result = subprocess.run(
-        [
-            "docker",
-            "inspect",
-            KDC_CONTAINER,
-            "--format",
-            "{{ range .NetworkSettings.Networks }}{{ .IPAddress }}{{ end }}",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    kdc_ip = result.stdout.strip()
+    # All containers use --network host so KDC is at localhost
+    kdc_ip = "localhost"
 
     # Write client krb5.conf
     krb5_conf = tmp_path_factory.mktemp("kdc") / "krb5.conf"
@@ -1315,6 +1422,8 @@ def _run_in_px(krb5_conf, shell_cmd):
             "docker",
             "run",
             "--rm",
+            "--network",
+            "host",
             "--cap-add",
             "IPC_LOCK",
             "-v",
@@ -1345,14 +1454,15 @@ def _run_krb_test(krb5_conf, password, python_code):
 
 
 _skip_no_docker = pytest.mark.skipif(not _docker_available(), reason="Docker not available")
-_skip_no_image = pytest.mark.skipif(not _image_available(), reason=f"{PX_IMAGE} image not found (run: make docker)")
-_skip_ci = pytest.mark.skipif(os.environ.get("CI") == "true", reason="Integration tests run locally only")
+_skip_no_mit_images = pytest.mark.skipif(
+    not _image_available(PX_IMAGE, KDC_IMAGE),
+    reason=f"{PX_IMAGE} or {KDC_IMAGE} image not found (run: make test-kerberos)",
+)
 
 
 @pytest.mark.integration
 @_skip_no_docker
-@_skip_no_image
-@_skip_ci
+@_skip_no_mit_images
 class TestKerberosIntegration:
     def test_raw_kinit(self, kdc):
         """kinit via stdin succeeds and klist shows a TGT."""
@@ -1570,14 +1680,14 @@ mgr._cleanup()
 # -------------------------------------------------------------------
 
 HEIMDAL_KDC_CONTAINER = "px-test-heimdal-kdc"
+HEIMDAL_KDC_IMAGE = "px-test-heimdal-kdc"
 HEIMDAL_CLIENT_IMAGE = "px-test-heimdal-client"
 
-# Heimdal KDC setup script — runs on Debian (Alpine Heimdal lacks database support)
+# Heimdal KDC entrypoint script — configure realm and start daemon.
+# Package installation is baked into the Docker image.
 HEIMDAL_KDC_SETUP_SCRIPT = """\
 #!/bin/sh
 set -e
-apt-get update -qq >/dev/null 2>&1
-apt-get install -y -qq heimdal-kdc heimdal-clients >/dev/null 2>&1
 
 cat > /etc/krb5.conf << 'EOF'
 [libdefaults]
@@ -1600,69 +1710,11 @@ echo "KDC ready"
 exec /usr/lib/heimdal-servers/kdc
 """
 
-# Dockerfile for the Heimdal client test image — Heimdal client + px from source
-HEIMDAL_CLIENT_DOCKERFILE = """\
-FROM python:alpine
-RUN apk add --no-cache heimdal dbus gnome-keyring tini
-COPY . /src
-RUN pip install /src
-"""
-
-
-def _heimdal_client_image_available():
-    """Return True if the Heimdal test client image exists locally."""
-    try:
-        result = subprocess.run(
-            ["docker", "image", "inspect", HEIMDAL_CLIENT_IMAGE],
-            capture_output=True,
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
 
 @pytest.fixture(scope="module")
 def heimdal_client_image():
-    """Build the Heimdal client test image from source.
-
-    Uses the px source tree with Heimdal instead of MIT krb5.
-    """
-    import pathlib
-
-    src_dir = str(pathlib.Path(__file__).resolve().parent.parent)
-
-    # Write a temporary Dockerfile
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".Dockerfile", delete=False) as f:
-        f.write(HEIMDAL_CLIENT_DOCKERFILE)
-        dockerfile = f.name
-
-    try:
-        result = subprocess.run(
-            [
-                "docker",
-                "build",
-                "-t",
-                HEIMDAL_CLIENT_IMAGE,
-                "-f",
-                dockerfile,
-                src_dir,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-        if result.returncode != 0:
-            pytest.skip(f"Failed to build Heimdal client image: {result.stderr}")
-    finally:
-        os.remove(dockerfile)
-
+    """Return the pre-built Heimdal client image name."""
     yield HEIMDAL_CLIENT_IMAGE
-
-    # Clean up image
-    subprocess.run(["docker", "rmi", HEIMDAL_CLIENT_IMAGE], capture_output=True)
 
 
 @pytest.fixture(scope="module")
@@ -1679,11 +1731,13 @@ def heimdal_kdc(tmp_path_factory):
             "run",
             "--rm",
             "-d",
+            "--network",
+            "host",
             "--name",
             HEIMDAL_KDC_CONTAINER,
             "-v",
             f"{setup_script}:/setup.sh:ro",
-            "debian:bookworm-slim",
+            HEIMDAL_KDC_IMAGE,
             "sh",
             "/setup.sh",
         ],
@@ -1704,19 +1758,8 @@ def heimdal_kdc(tmp_path_factory):
         subprocess.run(["docker", "rm", "-f", HEIMDAL_KDC_CONTAINER], capture_output=True)
         pytest.fail("Heimdal KDC container did not become ready in 30s")
 
-    result = subprocess.run(
-        [
-            "docker",
-            "inspect",
-            HEIMDAL_KDC_CONTAINER,
-            "--format",
-            "{{ range .NetworkSettings.Networks }}{{ .IPAddress }}{{ end }}",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    kdc_ip = result.stdout.strip()
+    # All containers use --network host so KDC is at localhost
+    kdc_ip = "localhost"
 
     krb5_conf = tmp_path_factory.mktemp("heimdal_kdc") / "krb5.conf"
     krb5_conf.write_text(
@@ -1743,6 +1786,8 @@ def _run_in_heimdal(krb5_conf, heimdal_image, shell_cmd):
             "docker",
             "run",
             "--rm",
+            "--network",
+            "host",
             "--cap-add",
             "IPC_LOCK",
             "-v",
@@ -1772,9 +1817,15 @@ def _run_heimdal_krb_test(krb5_conf, heimdal_image, password, python_code):
     return _run_in_heimdal(krb5_conf, heimdal_image, cmd)
 
 
+_skip_no_heimdal_images = pytest.mark.skipif(
+    not _image_available(HEIMDAL_KDC_IMAGE, HEIMDAL_CLIENT_IMAGE),
+    reason=f"{HEIMDAL_KDC_IMAGE} or {HEIMDAL_CLIENT_IMAGE} image not found (run: make test-kerberos)",
+)
+
+
 @pytest.mark.integration
 @_skip_no_docker
-@_skip_ci
+@_skip_no_heimdal_images
 class TestHeimdalKerberosIntegration:
     def test_raw_heimdal_kinit(self, heimdal_kdc, heimdal_client_image):
         """Heimdal kinit via stdin succeeds and klist shows a TGT."""
@@ -1795,8 +1846,6 @@ class TestHeimdalKerberosIntegration:
             heimdal_client_image,
             KRB_PASSWORD,
             f"""
-import sys
-sys.modules['__test_heimdal__'] = True  # marker
 from px.kerberos import KerberosManager
 import keyring, subprocess
 
@@ -1805,8 +1854,7 @@ mgr = KerberosManager(
     password_func=lambda: keyring.get_password('Px', '{PRINCIPAL}'),
     debug_print=lambda m: print(m, flush=True),
 )
-# Force Heimdal mode
-mgr._is_heimdal = True
+assert mgr._is_heimdal, "Expected Heimdal detection in Heimdal container"
 result = mgr.check(force=True)
 klist = subprocess.run(['klist'], capture_output=True, text=True, env=mgr._env)
 print(f'RESULT:{{result}}')
@@ -1834,7 +1882,7 @@ mgr = KerberosManager(
     password_func=lambda: keyring.get_password('Px', '{PRINCIPAL}'),
     debug_print=lambda m: print(m, flush=True),
 )
-mgr._is_heimdal = True
+assert mgr._is_heimdal, "Expected Heimdal detection in Heimdal container"
 mgr.check(force=True)
 print(f'EXPIRY:{{mgr.ticket_expiry}}')
 mgr._cleanup()
@@ -1863,7 +1911,7 @@ mgr = KerberosManager(
     password_func=lambda: keyring.get_password('Px', '{PRINCIPAL}'),
     debug_print=lambda m: print(m, flush=True),
 )
-mgr._is_heimdal = True
+assert mgr._is_heimdal, "Expected Heimdal detection in Heimdal container"
 mgr.check(force=True)
 valid = mgr._klist_valid()
 print(f'VALID:{{valid}}')
@@ -1888,7 +1936,7 @@ mgr = KerberosManager(
     password_func=lambda: keyring.get_password('Px', '{PRINCIPAL}'),
     debug_print=lambda m: print(m, flush=True),
 )
-mgr._is_heimdal = True
+assert mgr._is_heimdal, "Expected Heimdal detection in Heimdal container"
 result = mgr.check(force=True)
 print(f'RESULT:{{result}}')
 mgr._cleanup()

@@ -915,7 +915,7 @@ class State:
                 pprint("--kerberos requires --username to be set")
                 sys.exit(ERROR_CONFIG)
 
-            if "SSPI" not in self.curl_features and "GSS-API" not in self.curl_features:
+            if "GSS-API" not in self.curl_features:
                 pprint("--kerberos requires libcurl built with GSS-API support")
                 sys.exit(ERROR_CONFIG)
 
