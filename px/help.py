@@ -157,10 +157,10 @@ Configuration:
     Set to 1 to disable SSPI and use the configured username and password
 
   --workers= | PX_WORKERS= | settings:workers=
-  Number of parallel workers (processes). Valid integer, default: 2
+  Number of parallel workers (processes). Valid integer, default: 1
 
   --threads= | PX_THREADS= | settings:threads=
-  Number of parallel threads per worker (process). Valid integer, default: 32
+  Thread pool size for upstream proxy connections. Valid integer, default: 32
 
   --idle= | PX_IDLE= | settings:idle=
   Idle timeout in seconds for HTTP connect sessions. Valid integer, default: 30

@@ -24,15 +24,31 @@
   (Alpine 3.23+) links libcap-ng which aborts without the `IPC_LOCK` capability.
 
 ### Improvements
-- Reduced per-request overhead in `reload_proxy()` with double-checked locking
-  to avoid acquiring the state lock when a reload is not needed.
-- Cached `get_curl_features()` result at startup since libcurl features never
-  change at runtime, avoiding repeated FFI calls on every proxied request.
-- Cached the `noproxy_hosts` joined string on the `Wproxy` object so it is
-  only recomputed when proxy information is reloaded, not on every request.
-- Replaced `copy.deepcopy()` with shallow copy for the immutable proxy server
-  list returned by `find_proxy_for_url()`.
-- Used tuples instead of lists for membership checks in the request hot path.
+- Replaced synchronous `http.server` + threading with `asyncio` + `h11`.
+  CONNECT tunnels now use zero-thread bidirectional relays: `TunnelRelay`
+  (FD watchers via `add_reader`/`add_writer`) on Linux, and
+  `_async_tunnel_relay` (asyncio `StreamReader`/`StreamWriter` for the
+  client side, IOCP-backed `sock_recv`/`sock_sendall` for the upstream
+  libcurl socket) on Windows. Thread count stays bounded at the thread
+  pool size regardless of active tunnel count.
+- Changed `--workers` default from 2 to 1 — the async event loop handles
+  concurrency without multiple processes.
+- Reduced per-request overhead: double-checked locking in `reload_proxy()`,
+  cached `get_curl_features()` and `noproxy_hosts`, shallow copy for proxy
+  server lists, tuples for hot-path membership checks.
+
+### Internal
+- Added `h11` runtime dependency, `psutil` dev dependency.
+- Added concurrency benchmark tests (`make benchmark`) covering HTTP
+  throughput, CONNECT tunnel throughput, thread pool saturation, active data
+  exchange, thread count bounds, and memory bounds.
+- Wired `--threads` to `asyncio` default executor pool size.
+- Switched benchmark tests to use `mcurl.Curl` as the HTTP client instead of
+  `http.client` and raw sockets.
+- Dynamic xdist worker count (`-n auto`) — auto-scales to hardware via a
+  platform-aware `pytest_xdist_auto_num_workers` hook in `conftest.py`.
+- Fixed network test port collisions across xdist workers — each worker now
+  gets a dedicated port range based on worker ID.
 
 ---
 

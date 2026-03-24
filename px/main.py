@@ -1,11 +1,11 @@
 "Px is an HTTP proxy server to automatically authenticate through an NTLM proxy"
 
+import asyncio
 import concurrent.futures
 import multiprocessing
 import os
 import signal
 import socket
-import socketserver
 import sys
 import threading
 import time
@@ -25,38 +25,21 @@ import mcurl
 warnings.filterwarnings("ignore")
 
 ###
-# Multi-processing and multi-threading
+# Server startup helpers
 
 
-class PoolMixIn(socketserver.ThreadingMixIn):
-    pool = None
-
-    def process_request(self, request, client_address):
-        self.pool.submit(self.process_request_thread, request, client_address)
-
-    def verify_request(self, request, client_address):
-        dprint(f"Client address: {client_address[0]}")
-        if client_address[0] in STATE.allow:
-            return True
-
-        if STATE.hostonly and client_address[0] in config.get_host_ips():
-            dprint("Host-only IP allowed")
-            return True
-
-        dprint(f"Client not allowed: {client_address[0]}")
-        return False
-
-
-class ThreadedTCPServer(PoolMixIn, socketserver.TCPServer):
-    daemon_threads = True
-    allow_reuse_address = True
-
-    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
-        socketserver.TCPServer.__init__(self, server_address, RequestHandlerClass, bind_and_activate)
-
-        self.pool = concurrent.futures.ThreadPoolExecutor(  # type: ignore[assignment]
-            max_workers=STATE.config.getint("settings", "threads"), thread_name_prefix="Thread"
-        )
+def create_listen_socket(listen, port):
+    "Create a bound, listening TCP socket for the given address and port"
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((listen, port))
+    except OSError:
+        sock.close()
+        raise
+    sock.listen(128)
+    sock.setblocking(False)
+    return sock
 
 
 def print_banner(listen, port):
@@ -73,19 +56,61 @@ def print_banner(listen, port):
             dprint(section + ":" + option + " = " + STATE.config.get(section, option))
 
 
-def serve_forever(httpd):
-    httpd.serve_forever()
-    httpd.shutdown()
+def verify_client(client_address):
+    "Check if client is allowed to connect"
+    dprint(f"Client address: {client_address}")
+    if client_address in STATE.allow:
+        return True
+
+    if STATE.hostonly and client_address in config.get_host_ips():
+        dprint("Host-only IP allowed")
+        return True
+
+    dprint(f"Client not allowed: {client_address}")
+    return False
 
 
-def start_httpds(httpds):
-    for httpd in httpds[:-1]:
-        # Start server in a thread for each listen address
-        thrd = threading.Thread(target=serve_forever, args=(httpd,))
-        thrd.start()
+async def handle_connection(reader, writer):
+    "Handle a new client connection"
+    peername = writer.get_extra_info("peername")
+    if peername and not verify_client(peername[0]):
+        writer.close()
+        return
 
-    # Start server in main thread for last listen address
-    serve_forever(httpds[-1])
+    conn = handler.ConnectionHandler(reader, writer)
+    await conn.handle()
+
+
+async def start_server(listen, port, sock=None):
+    "Start an async proxy server"
+    if sock is not None:
+        server = await asyncio.start_server(handle_connection, sock=sock, backlog=128)
+    else:
+        server = await asyncio.start_server(handle_connection, listen, port, backlog=128, reuse_address=True)
+    return server
+
+
+async def run_async_servers(listen_addrs, port, socks=None):
+    "Start async proxy servers for all listen addresses and run until stopped"
+    # Configure thread pool for blocking mcurl.do() calls
+    threads = STATE.config.getint("settings", "threads")
+    loop = asyncio.get_event_loop()
+    loop.set_default_executor(concurrent.futures.ThreadPoolExecutor(max_workers=threads))
+
+    servers = []
+    for i, listen in enumerate(listen_addrs):
+        if socks:
+            srv = await start_server(listen, port, sock=socks[i])
+        else:
+            srv = await start_server(listen, port)
+        servers.append(srv)
+
+    # Serve forever on all listen addresses
+    await asyncio.gather(*[srv.serve_forever() for srv in servers])
+
+
+###
+# Multi-processing
 
 
 def start_worker(pipeout):
@@ -95,22 +120,17 @@ def start_worker(pipeout):
     STATE.parse_config()
 
     port = STATE.config.getint("proxy", "port")
-    httpds = []
+    socks = []
     for listen in STATE.listen:
         # Get socket from parent process for each listen address
         mainsock = pipeout.recv()
         if hasattr(socket, "fromshare"):
             mainsock = socket.fromshare(mainsock)
 
-        # Start server but use socket from parent process
-        httpd = ThreadedTCPServer((listen, port), handler.PxHandler, bind_and_activate=False)
-        httpd.socket = mainsock
-
-        httpds.append(httpd)
-
+        socks.append(mainsock)
         print_banner(listen, port)
 
-    start_httpds(httpds)
+    asyncio.run(run_async_servers(STATE.listen, port, socks=socks))
 
 
 def run_pool():
@@ -118,12 +138,11 @@ def run_pool():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     port = STATE.config.getint("proxy", "port")
-    httpds = []
     mainsocks = []
     for listen in STATE.listen:
-        # Setup server for each listen address
+        # Create listening socket for each listen address
         try:
-            httpd = ThreadedTCPServer((listen, port), handler.PxHandler)
+            sock = create_listen_socket(listen, port)
         except OSError as exc:
             strexc = str(exc)
             if "attempt was made" in strexc or "already in use" in strexc:
@@ -133,9 +152,7 @@ def run_pool():
                 pprint(strexc)
             os._exit(config.ERROR_UNKNOWN)
 
-        httpds.append(httpd)
-        mainsocks.append(httpd.socket)
-
+        mainsocks.append(sock)
         print_banner(listen, port)
 
     if sys.platform != "darwin":
@@ -163,7 +180,7 @@ def run_pool():
                         # Send socket as is for Linux
                         pipein.send(mainsock)
 
-    start_httpds(httpds)
+    asyncio.run(run_async_servers(STATE.listen, port, socks=mainsocks))
 
 
 ###
@@ -197,9 +214,9 @@ def test(testurl):
                 socket.create_connection((listen, port), 1)
                 break
             except (TimeoutError, ConnectionRefusedError):
-                time.sleep(0.1)
+                time.sleep(0.01)
                 count += 1
-                if count == 5:
+                if count == 50:
                     pprint("Failed: Px did not start")
                     os._exit(config.ERROR_TEST)
 
@@ -264,10 +281,20 @@ def test(testurl):
                     url += "/"
                 urls.append(url)
 
+        # Run all method queries concurrently for speed
+        threads = []
         for method in ["GET", "POST", "PUT", "DELETE", "PATCH"]:
             for url in urls:
                 data = str(uuid.uuid4()) if method in ["POST", "PUT", "PATCH"] else None
-                query(url + method.lower(), method, data, do_quit=False, check=True, insecure=insecure)
+                t = threading.Thread(
+                    target=query,
+                    args=(url + method.lower(), method, data),
+                    kwargs={"do_quit": False, "check": True, "insecure": insecure},
+                )
+                t.start()
+                threads.append(t)
+        for t in threads:
+            t.join()
 
         os._exit(config.ERROR_SUCCESS)
 

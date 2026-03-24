@@ -112,7 +112,7 @@ class TestDefaults:
         assert config.DEFAULTS["listen"] == "127.0.0.1"
 
     def test_default_workers(self):
-        assert config.DEFAULTS["workers"] == "2"
+        assert config.DEFAULTS["workers"] == "1"
 
     def test_default_threads(self):
         assert config.DEFAULTS["threads"] == "32"

@@ -289,5 +289,5 @@ Px depends on the following Python packages:
 
 ## Limitations
 
-- Mac socket sharing is not implemented at this time and is limited to running
-  in a single process.
+- macOS does not support sharing listen sockets across multiple worker processes,
+  so `--workers` must remain 1 on Mac.

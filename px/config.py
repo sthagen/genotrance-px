@@ -338,7 +338,7 @@ DEFAULTS = {
     "username": "",
     "auth": "",
     "kerberos": "0",
-    "workers": "2",
+    "workers": "1",
     "threads": "32",
     "idle": "30",
     "socktimeout": "20.0",
@@ -901,6 +901,12 @@ class State:
 
         # Curl multi object to manage all easy connections
         self.mcurl = mcurl.MCurl(debug_print=dprint)
+
+        # Increase idle connection reuse cache (default is 4 x easy handles).
+        # Active CONNECT tunnels are protected by keeping their handle in the
+        # multi — this setting only affects how many idle HTTP connections curl
+        # keeps for reuse between requests.
+        self.mcurl.setopt(mcurl.libcurl.CURLMOPT_MAXCONNECTS, mcurl.py2clong(256))
 
         # Cache curl features - these are compiled into libcurl and never change
         self.curl_features = mcurl.get_curl_features()

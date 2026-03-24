@@ -110,8 +110,8 @@ for the full list of supported types.
 
 | Flag | Env var | INI key | Default | Description |
 |------|---------|---------|---------|-------------|
-| `--workers=N` | `PX_WORKERS` | `settings:workers` | `2` | Number of worker processes |
-| `--threads=N` | `PX_THREADS` | `settings:threads` | `32` | Threads per worker process |
+| `--workers=N` | `PX_WORKERS` | `settings:workers` | `1` | Number of worker processes |
+| `--threads=N` | `PX_THREADS` | `settings:threads` | `32` | Thread pool size for upstream connections |
 | `--idle=N` | `PX_IDLE` | `settings:idle` | `30` | Idle timeout for CONNECT sessions (seconds) |
 | `--socktimeout=N` | `PX_SOCKTIMEOUT` | `settings:socktimeout` | `20` | Connection timeout (seconds) |
 | `--proxyreload=N` | `PX_PROXYRELOAD` | `settings:proxyreload` | `60` | Proxy info refresh interval (seconds) |

@@ -8,24 +8,28 @@ Px is a lightweight HTTP/HTTPS proxy server that enables applications to authent
 
 ## Runtime model
 
-Px uses a multi-process, multi-threaded architecture:
+Px uses an async, single-process architecture (with optional multi-process
+scaling via `--workers`):
 
-1. **Master process** (`main.py`) — parses config, spawns worker processes.
-2. **Worker processes** (`--workers`, default 2) — each runs a `ThreadedTCPServer`
-   bound to the configured listen address and port. Workers share the port via
-   `SO_REUSEADDR` (Linux/Mac) or socket inheritance (Windows).
-3. **Thread pool** (`--threads`, default 32) — each worker has a
-   `concurrent.futures.ThreadPoolExecutor`. Incoming connections are dispatched to
-   threads via `PoolMixIn.process_request`.
-4. **PxHandler** — one instance per connection. Subclass of
-   `http.server.BaseHTTPRequestHandler`. Handles both `do_GET/POST/PUT/...` and
-   `do_CONNECT` (tunnelling) via `do_curl()`.
+1. **Process** (`main.py`) — parses config, runs an `asyncio` event loop with
+   `asyncio.start_server` bound to the configured listen address and port.
+   Additional worker processes can be spawned with `--workers` but the default
+   is 1 since the async event loop handles concurrency efficiently.
+2. **Thread pool** (`--threads`, default 32) — blocking `mcurl.do()` calls are
+   dispatched to a `ThreadPoolExecutor` via `asyncio.to_thread()`. Threads are
+   held only for the duration of the upstream request, not the full connection
+   or tunnel lifetime.
+3. **Connection handling** — each TCP connection is handled by a
+   `ConnectionHandler` coroutine. HTTP parsing uses `h11` to read requests from
+   the client.
+4. **CONNECT tunnelling** — established tunnels use zero-thread bidirectional
+   relays. The relay strategy is platform-specific (see below).
 
 ```
-Client ─── HTTP request ──► PxHandler.do_curl()
+Client ─── HTTP request ──► ConnectionHandler._handle_request()
                               │
                     ┌─────────▼──────────┐
-                    │ get_destination()   │
+                    │ _get_destination()  │
                     │  STATE.reload_proxy │
                     │  Wproxy.find_proxy  │
                     └─────────┬──────────┘
@@ -34,25 +38,25 @@ Client ─── HTTP request ──► PxHandler.do_curl()
                     │ mcurl.Curl         │
                     │  set_auth()        │
                     │  set_proxy()       │
-                    │  perform()         │
+                    │  asyncio.to_thread │
                     └─────────┬──────────┘
                               │
                          Response ◄── Upstream proxy / direct
                               │
-                    Stream back to client
+              BridgeWriter ──► transport.write() ──► Client
 ```
 
 ### Mac limitation
 
 macOS does not support `SO_REUSEPORT` in the way needed for multiple processes
-to accept on the same socket, so Px is limited to a single worker process on Mac.
+to accept on the same socket, so `--workers` must remain 1 on Mac.
 
 ## Package layout
 
 | File | Responsibility |
 |------|----------------|
-| `px/main.py` | Entry point, multiprocessing, TCP server setup, `--test` logic |
-| `px/handler.py` | `PxHandler` — request handling, client auth, curl integration, spnego monkey-patching |
+| `px/main.py` | Entry point, multiprocessing, async server setup, `--test` logic |
+| `px/handler.py` | `ConnectionHandler` — h11 HTTP parsing, request handling, client auth, curl integration, CONNECT tunnel relay, spnego monkey-patching |
 | `px/config.py` | `State` singleton, CLI/env/INI/dotenv parsing, proxy reload, `quit`/`restart` actions |
 | `px/wproxy.py` | `Wproxy` — proxy discovery from config, environment, Windows Internet Options, PAC |
 | `px/pac.py` | `Pac` — PAC file loading and evaluation via quickjs-ng |
@@ -73,8 +77,9 @@ configuration and shared objects. Key attributes:
 - **Shared objects** — `config` (a `configparser.ConfigParser`), `mcurl`
   (a `mcurl.MCurl` instance), `wproxy` (a `Wproxy` instance), `debug`
   (a `Debug` instance).
-- **Thread safety** — `state_lock` protects `reload_proxy()` so multiple handler
-  threads do not refresh proxy info concurrently.
+- **Thread safety** — `state_lock` protects `reload_proxy()` so concurrent
+  handler coroutines (which may call reload from `asyncio.to_thread`) do not
+  refresh proxy info simultaneously.
 
 Configuration is parsed in `parse_config()` which processes the CLI flags,
 environment variables (`PX_*`), dotenv files, and `px.ini` in precedence order.
@@ -82,20 +87,29 @@ The `DEFAULTS` dict defines fallback values for every config key.
 
 ## Request handling (`px.handler`)
 
-`PxHandler.do_curl()` is the central request handler:
+`ConnectionHandler._handle_request()` is the central request handler. The
+connection handler uses `h11` for parsing incoming HTTP requests and sends
+responses as raw bytes (since curl's bridge writes directly to the asyncio
+transport, bypassing h11's state machine). A fresh `h11.Connection` is created
+for each request to avoid state conflicts.
 
-1. **Client auth** — if `--client-auth` is enabled, `do_client_auth()` validates
+1. **Client auth** — if `--client-auth` is enabled, `_do_client_auth()` validates
    the client using NEGOTIATE/NTLM/DIGEST/BASIC. NTLM client auth uses
    monkey-patched `spnego._ntlm._get_credential` to look up credentials from
    keyring or `PX_CLIENT_PASSWORD`.
-2. **Destination** — `get_destination()` calls `STATE.reload_proxy()` (if the
+2. **Destination** — `_get_destination()` calls `STATE.reload_proxy()` (if the
    `proxyreload` interval has elapsed) and then `Wproxy.find_proxy_for_url()`
    to get the upstream proxy or DIRECT.
 3. **Curl setup** — creates/reuses a `mcurl.Curl` object, sets proxy, auth,
    headers, and request body.
-4. **Streaming** — response headers and body are streamed back to the client
-   via callbacks. CONNECT tunnelling uses `mcurl.Curl` in connect-only mode
-   with a select loop for bidirectional data forwarding.
+4. **Streaming** — for plain HTTP, a `BridgeWriter` forwards curl response data
+   from the thread pool to the asyncio transport via `call_soon_threadsafe`.
+   CONNECT tunnelling uses zero-thread bidirectional relays: `TunnelRelay`
+   (FD watchers) on Linux, `_async_tunnel_relay` (StreamReader/Writer +
+   IOCP) on Windows.
+5. **Keep-alive** — the connection loop supports HTTP/1.1 keep-alive, processing
+   multiple requests on a single TCP connection until a `Connection: close`
+   header or a CONNECT tunnel consumes the socket.
 
 ### spnego monkey-patching
 
@@ -168,13 +182,120 @@ internally by `quickjs.Function`.
 This allows Px to pick up proxy changes (e.g. WPAD updates, PAC file changes)
 without restarting.
 
+## CONNECT tunnel relay
+
+CONNECT tunnels are the most complex part of the proxy. After `mcurl.do()`
+establishes the upstream connection (and performs proxy authentication if
+needed), the proxy must relay raw bytes bidirectionally between the client
+socket and the upstream socket until one side closes or an idle timeout fires.
+
+### Design goals
+
+- **Zero additional threads** — tunnels must not consume thread pool slots.
+  The thread pool is reserved for `mcurl.do()` calls only.
+- **High concurrency** — hundreds of simultaneous tunnels must coexist on a
+  single event loop without degrading performance.
+- **Bounded resources** — thread count and memory must stay roughly constant
+  regardless of active tunnel count.
+
+### Platform-specific relay strategies
+
+#### Linux — `TunnelRelay` (FD watchers)
+
+On Linux, `SelectorEventLoop` supports `add_reader()`/`add_writer()` for raw
+file descriptors. `TunnelRelay` uses `os.dup()` to duplicate the client FD
+(so asyncio's transport ownership tracking doesn't conflict), then registers
+FD watchers for both sides:
+
+- `_on_client_readable` → `os.read()` from client FD → `os.write()` to upstream FD
+- `_on_upstream_readable` → `os.read()` from upstream FD → `os.write()` to client FD
+
+Partial writes are buffered and drained via `add_writer()` callbacks. An idle
+timeout fires via `call_later()`. All I/O is non-blocking and multiplexed by
+epoll — no threads involved.
+
+#### Windows — `_async_tunnel_relay` (StreamReader/Writer + IOCP)
+
+On Windows, `ProactorEventLoop` does not support `add_reader()`/`add_writer()`
+for raw FDs. Instead, `_async_tunnel_relay` uses a hybrid approach:
+
+- **Client side:** asyncio `StreamReader.read()` / `StreamWriter.write()` —
+  the transport keeps its IOCP ownership of the client socket.
+- **Upstream side:** `loop.sock_recv()` / `loop.sock_sendall()` on the raw
+  libcurl socket (which has no asyncio transport).
+
+Two async tasks run concurrently:
+- `client_to_upstream()` — reads from `reader`, sends via `sock_sendall`
+- `upstream_to_client()` — reads via `sock_recv`, writes to `writer`
+
+A watchdog task monitors idle timeout. When any task completes (connection
+closed, error, or timeout), the remaining tasks are cancelled.
+
+### Windows IOCP design rationale
+
+The Windows relay uses `StreamReader`/`StreamWriter` for the client side
+instead of raw `sock_recv()` because **ProactorEventLoop's IOCP creates
+exclusive ownership of a socket's overlapped I/O.** The asyncio transport
+holds the client socket's IOCP registration; issuing a second overlapped
+read via `sock_recv()` on the same socket causes undefined behavior
+(assertion failures in `_loop_reading`, data loss from competing IOCP
+completions). Using the `StreamReader`/`StreamWriter` API lets the
+transport manage all IOCP operations on the client socket while the relay
+reads and writes through the standard asyncio streams interface.
+
+For the upstream (libcurl) socket, `sock_recv()`/`sock_sendall()` work
+because that socket has no asyncio transport — it was created by libcurl
+and accessed via `socket.fromfd()`.  See `debug.md` for detailed research
+notes on Windows IOCP and socket duplication challenges.
+
+### Relay lifecycle
+
+```
+_handle_request()
+  │
+  ├─ asyncio.to_thread(STATE.mcurl.do, curl)   ← thread pool slot
+  │     └─ Thread released after do() returns
+  │
+  └─ _handle_connect_tunnel()
+       ├─ Send "200 Connection established" to client
+       ├─ writer.drain()  ← flush the 200 response
+       │
+       ├─ [Linux]   pause_reading() + os.dup(client_fd)
+       │             → TunnelRelay(add_reader/add_writer)
+       │
+       └─ [Windows] reader/writer kept as-is (transport keeps IOCP ownership)
+                     → _async_tunnel_relay(reader, writer, curl_sock)
+                          │
+                          ├─ client_to_upstream()  ← reader.read() → sock_sendall()
+                          ├─ upstream_to_client()  ← sock_recv() → writer.write()
+                          └─ watchdog(idle_timeout)
+```
+
+### Benchmark results
+
+With default `--threads=32` on a single worker process (`--workers=1`):
+
+| Metric | Linux | Windows |
+|--------|-------|---------|
+| HTTP throughput (200 concurrent) | ~40 req/s | ~42 req/s |
+| CONNECT throughput (200 concurrent) | ~22 req/s | ~48 req/s |
+| Active tunnel data exchange (128 tunnels) | ~50 req/s | 128/128 succeeded |
+| Thread count under load | 35 | 18–24 |
+| Memory baseline / under load | 60 MB | 84–85 MB |
+| Thread pool saturation point | concurrency=32 | concurrency=32 |
+
+Thread count stays bounded near the thread pool size regardless of active tunnel
+count — the zero-thread relay design keeps tunnels off the pool entirely. Memory
+growth is minimal under load (~1 MB from baseline to 512 concurrent connections).
+
 ## Error handling
 
 - **Unhandled exceptions** — `handle_exceptions()` in `main.py` installs a
   global exception handler that writes tracebacks to `debug.log` in the working
   directory.
-- **Connection errors** — `PxHandler.handle_one_request()` catches `OSError` and
-  `ConnectionError`, logs them, and cleans up the curl handle.
+- **Connection errors** — `ConnectionHandler.handle()` catches exceptions during
+  request processing, logs them, cleans up the curl handle, and closes the
+  connection.
 - **Debug module** — `pprint()` and `dprint()` silently swallow exceptions to
   ensure logging never crashes the proxy. Bare excepts in `debug.py` are
   intentional.
