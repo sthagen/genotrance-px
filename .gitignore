@@ -53,7 +53,7 @@ __pycache__/
 *.pyo
 
 # Virtual environments
-.venv/
+.venv*/
 
 # Build artifacts
 build/

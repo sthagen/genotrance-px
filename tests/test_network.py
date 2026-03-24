@@ -11,9 +11,25 @@ import pytest
 from helpers import can_connect, find_free_port, is_port_free, quit_px, run_px
 
 
+def _worker_port(request, test_index):
+    """Return a unique port for this worker + test combination.
+
+    Each xdist worker gets a contiguous block of 10 ports starting at
+    5000 + worker_id * 10.  test_index (0-9) selects a port within
+    that block.  Falls back to find_free_port if the computed port is busy."""
+    try:
+        worker_id = int(request.config.workerinput.get("workerid", "gw0").replace("gw", ""))
+    except AttributeError:
+        worker_id = 0
+    port = 5000 + worker_id * 10 + test_index
+    if is_port_free(port):
+        return port
+    return find_free_port(port)
+
+
 class TestQuit:
-    def test_quit_stops_px(self, tmp_path):
-        port = find_free_port(4100)
+    def test_quit_stops_px(self, request, tmp_path):
+        port = _worker_port(request, 0)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("quit", port, tmp_path)
@@ -49,9 +65,9 @@ class TestQuit:
 
 
 class TestListen:
-    def test_listen_localhost_only(self, tmp_path):
+    def test_listen_localhost_only(self, request, tmp_path):
         """Px with default listen should only accept on 127.0.0.1."""
-        port = find_free_port(4200)
+        port = _worker_port(request, 1)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("listen", port, tmp_path)
@@ -62,9 +78,9 @@ class TestListen:
             if logfile:
                 logfile.close()
 
-    def test_listen_specific_ip(self, tmp_path):
+    def test_listen_specific_ip(self, request, tmp_path):
         """Px with --listen should only accept on that IP."""
-        port = find_free_port(4300)
+        port = _worker_port(request, 2)
         if port is None:
             pytest.skip("No free port found")
 
@@ -91,9 +107,9 @@ class TestListen:
 
 
 class TestHostonly:
-    def test_hostonly_binds_all_local(self, tmp_path):
+    def test_hostonly_binds_all_local(self, request, tmp_path):
         """Px with --hostonly should accept on all local interfaces."""
-        port = find_free_port(4400)
+        port = _worker_port(request, 3)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("hostonly", port, tmp_path, flags="--hostonly")
@@ -114,9 +130,9 @@ class TestHostonly:
 
 
 class TestGateway:
-    def test_gateway_binds_all(self, tmp_path):
+    def test_gateway_binds_all(self, request, tmp_path):
         """Px with --gateway should accept on all interfaces."""
-        port = find_free_port(4500)
+        port = _worker_port(request, 4)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("gateway", port, tmp_path, flags="--gateway")
@@ -137,7 +153,7 @@ class TestGateway:
 
 
 class TestAllow:
-    def test_allow_restricts_to_matching_ip(self, tmp_path):
+    def test_allow_restricts_to_matching_ip(self, request, tmp_path):
         """Px with --gateway --allow should accept connections from matching IPs only."""
         from px.config import get_host_ips
 
@@ -147,7 +163,7 @@ class TestAllow:
             pytest.skip("Need at least one non-Docker IP")
 
         # Allow only 127.0.* — connections from 127.0.0.1 should succeed at socket level
-        port = find_free_port(4600)
+        port = _worker_port(request, 5)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("allow", port, tmp_path, flags="--gateway --allow=127.0.*.*")
@@ -167,9 +183,9 @@ class TestAllow:
             if logfile:
                 logfile.close()
 
-    def test_allow_specific_subnet(self, tmp_path):
+    def test_allow_specific_subnet(self, request, tmp_path):
         """Px with --gateway --allow with specific subnet pattern."""
-        port = find_free_port(4650)
+        port = _worker_port(request, 6)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("allow-subnet", port, tmp_path, flags="--gateway --allow=10.0.*.*")
@@ -183,9 +199,9 @@ class TestAllow:
 
 
 class TestNoproxyBypass:
-    def test_noproxy_flag_accepted(self, tmp_path):
+    def test_noproxy_flag_accepted(self, request, tmp_path):
         """Px with --noproxy should start and accept connections."""
-        port = find_free_port(4700)
+        port = _worker_port(request, 7)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("noproxy", port, tmp_path, flags="--noproxy=*.*.*.*")
@@ -196,9 +212,9 @@ class TestNoproxyBypass:
             if logfile:
                 logfile.close()
 
-    def test_noproxy_with_proxy_flag(self, tmp_path):
+    def test_noproxy_with_proxy_flag(self, request, tmp_path):
         """Px with --proxy and --noproxy should start and accept connections."""
-        port = find_free_port(4750)
+        port = _worker_port(request, 8)
         if port is None:
             pytest.skip("No free port found")
         subp, cmd, logfile = run_px("noproxy-proxy", port, tmp_path, flags="--proxy=127.0.0.1:9999 --noproxy=*.*.*.*")

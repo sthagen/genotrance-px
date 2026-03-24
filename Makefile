@@ -14,7 +14,7 @@ check: ## Run code quality tools
 
 .PHONY: test
 test: ## Run the test suite with coverage
-	@uv run python -m pytest tests -n 4 --cov --cov-config=pyproject.toml --cov-report=xml
+	@uv run python -m pytest tests -n auto --cov --cov-config=pyproject.toml --cov-report=xml
 
 .PHONY: test-musl
 test-musl: ## Build and test in musl (Alpine) containers
@@ -40,6 +40,10 @@ docker-kerberos: docker ## Build Docker images for Kerberos integration tests
 .PHONY: test-kerberos
 test-kerberos: docker-kerberos ## Run Kerberos integration tests against a local KDC in Docker
 	@uv run python -m pytest tests/test_kerberos.py -m integration -v
+
+.PHONY: benchmark
+benchmark: ## Run concurrency benchmarks
+	@uv run python -m pytest tests/test_benchmark.py -m benchmark -v -s
 
 .PHONY: build
 build: clean ## Build sdist and wheel

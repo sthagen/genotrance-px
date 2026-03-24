@@ -67,12 +67,10 @@ jobs:
       - name: Run tests
         timeout-minutes: 60
         run: |
-          if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            uv run python -m pytest tests -n 2 --tb=short -q
-          elif [ "${{ matrix.os }}" == "macos-latest" ]; then
-            PX_CI_MINIMAL=1 uv run python -m pytest tests -n 4 --tb=short -q --ignore=tests/test_network.py
+          if [ "${{ matrix.os }}" == "macos-latest" ]; then
+            PX_CI_MINIMAL=1 uv run python -m pytest tests -n auto --tb=short -q --ignore=tests/test_network.py
           else
-            uv run python -m pytest tests -n 4 --tb=short -q
+            uv run python -m pytest tests -n auto --tb=short -q
           fi
 
   kerberos:

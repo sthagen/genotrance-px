@@ -8,9 +8,10 @@ Tests live in `tests/`:
 
 | File | Scope |
 |------|-------|
-| `conftest.py` | Pytest configuration — path setup and plaintext keyring backend |
+| `conftest.py` | Pytest configuration — path setup, plaintext keyring backend, xdist auto-parallelism hook |
 | `fixtures.py` | Shared test fixtures — port allocation, Px server instances, auth parametrisation |
 | `helpers.py` | Utility functions — subprocess management, port checks, keyring setup |
+| `test_benchmark.py` | Concurrency benchmarks — HTTP/CONNECT throughput, thread count, memory at various concurrency levels (marked `benchmark`, run via `make benchmark`) |
 | `test_config.py` | Configuration utility tests — `get_logfile`, `get_config_dir`, `get_host_ips`, defaults, save, install |
 | `test_debug.py` | Debug module tests — `Debug` singleton, `pprint`, `dprint` |
 | `test_kerberos.py` | Kerberos ticket management — unit tests (mocked subprocess, Linux/macOS only) and Docker-based integration tests against local MIT and Heimdal KDCs (marked `integration`, run via `make test-kerberos`) |
@@ -47,8 +48,8 @@ uv run python -m pytest tests/test_proxy.py -q
 # Run with coverage
 uv run python -m pytest tests --cov --cov-config=pyproject.toml --cov-report=xml
 
-# Run with parallel execution
-uv run python -m pytest tests -n 4
+# Run with parallel execution (auto-scales to hardware)
+uv run python -m pytest tests -n auto
 ```
 
 ### With a specific Python version
@@ -64,7 +65,29 @@ uv run -p 3.13 tox
 ```
 
 The `tox` configuration in `pyproject.toml` defines environments for Python
-3.10–3.14 and a "binary" environment.
+3.10–3.14 and a "binary" environment. All environments use `pytest -n auto`
+for parallel test execution, auto-scaled by the `conftest.py` hook.
+
+---
+
+## Parallel test execution
+
+Tests use `pytest-xdist` with `-n auto` everywhere — Makefile, tox, and CI.
+The `pytest_xdist_auto_num_workers` hook in `conftest.py` computes the worker
+count based on CPU count and platform:
+
+- **All platforms**: `max(2, cpu_count // 4)` — each test can spawn up to 4
+  processes, so dividing by 4 avoids oversubscription.
+- **Windows CI**: forced to 1 (`CI` env var set) — Schannel TLS handshakes fail
+  under concurrent HTTPS CONNECT tests when multiple Px instances compete for
+  connections on resource-constrained CI runners.
+
+Each xdist worker reserves 3 ports for proxy tests (`fixtures.py`) and 10 ports
+for network tests (`test_network.py`), allocated via worker ID offsets to avoid
+collisions.
+
+To override the auto-computed value, either pass an explicit `-n N` or set the
+`PYTEST_XDIST_AUTO_NUM_WORKERS` environment variable.
 
 ---
 
@@ -154,9 +177,10 @@ tests including those run via `tox`.
 
 ## Test dependencies
 
-Test dependencies (`pytest`, `pytest-xdist`, `pytest-httpbin`, `pytest-cov`) are
-declared in the `dev` dependency group in `pyproject.toml` alongside linting and
-type checking tools (`pre-commit`, `ruff`, `mypy`). `uv sync` installs them all.
+Test dependencies (`pytest`, `pytest-xdist`, `pytest-httpbin`, `pytest-cov`,
+`psutil`) are declared in the `dev` dependency group in `pyproject.toml`
+alongside linting and type checking tools (`pre-commit`, `ruff`, `mypy`).
+`uv sync` installs them all.
 
 ---
 
@@ -240,3 +264,45 @@ The `kerberos` job in `ci.yml` runs the integration tests on every push to
   tests are skipped with a clear message.
 - The `--cap-add IPC_LOCK` capability is passed to the px container so that
   `gnome-keyring-daemon` can lock memory pages for secure credential storage.
+
+---
+
+## Concurrency benchmarks
+
+`test_benchmark.py` measures the async server's performance under concurrent
+load. The tests are marked with `@pytest.mark.benchmark` and excluded from the
+default test run. Benchmarks use `mcurl.Curl` as the HTTP client and a fast
+async upstream server (pure asyncio, not httpbin) to ensure the proxy is always
+the bottleneck being measured.
+
+### What is measured
+
+- **HTTP GET throughput** (`TestHTTPBenchmark`) — requests per second at
+  concurrency 1–200, verifying ≥80% success rate.
+- **CONNECT tunnel throughput** (`TestCONNECTBenchmark`) — CONNECT + TLS
+  handshake + GET at concurrency 1–200, verifying ≥60% success rate.
+- **Thread count bounded** (`TestResourceUsage`) — verifies thread count stays
+  constant under 50 concurrent connections (async relay should not spawn threads
+  proportional to tunnels).
+- **Memory bounded** (`TestResourceUsage`) — verifies RSS does not more than
+  double under 200 concurrent requests.
+- **Thread pool saturation** (`TestThreadSaturation`) — escalates concurrency
+  from 16 to 512 to find the point where the `--threads` pool becomes the
+  bottleneck and throughput plateaus.
+- **Active data exchange** (`TestActiveDataExchange`) — launches 4–512
+  simultaneous CONNECT tunnels that all actively exchange data via a barrier,
+  stressing the event loop's FD watcher / IOCP multiplexing.
+
+### Running
+
+```bash
+# Via make
+make benchmark
+
+# Via pytest directly
+uv run python -m pytest tests/test_benchmark.py -m benchmark -v -s
+```
+
+Results are printed as a table with columns for concurrency, success/failure
+counts, latency percentiles (avg, p50, p99), requests/sec, thread count, and
+RSS memory.
