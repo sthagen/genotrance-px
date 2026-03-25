@@ -113,7 +113,7 @@ def run_px(name, port, tmp_path, flags="", env=None, listen_ip="127.0.0.1"):
 
     tmp_path can be a Path (function-scoped) or a tmp_path_factory
     (session-scoped) — if it has mktemp(), a subdirectory is created."""
-    cmd = f"px --debug --port={port} {flags}"
+    cmd = f"px --verbose --port={port} {flags}"
 
     px_print_env(f"{name}: {cmd}", env)
 

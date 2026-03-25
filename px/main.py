@@ -14,7 +14,7 @@ import warnings
 
 from . import config, handler
 from .config import STATE
-from .debug import dprint, pprint
+from .debug import Debug, dprint, pprint
 from .version import __version__
 
 if sys.platform == "win32":
@@ -164,6 +164,7 @@ def run_pool():
             #
             # Linux shares all open FD with children since it uses fork()
             workers = STATE.config.getint("settings", "workers")
+            Debug.workers = workers
             for _ in range(workers - 1):
                 (pipeout, pipein) = multiprocessing.Pipe()
                 p = multiprocessing.Process(target=start_worker, args=(pipeout,))

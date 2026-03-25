@@ -36,6 +36,9 @@
 - Reduced per-request overhead: double-checked locking in `reload_proxy()`,
   cached `get_curl_features()` and `noproxy_hosts`, shallow copy for proxy
   server lists, tuples for hot-path membership checks.
+- Optimized `--verbose` logging: removed `os.fsync()` and file I/O overhead,
+  skipped process/thread name lookup when `--workers=1`. Log output is more
+  compact (timestamp + call tree + message) while retaining diagnostic value.
 
 ### Internal
 - Added `h11` runtime dependency, `psutil` dev dependency.
@@ -49,6 +52,9 @@
   platform-aware `pytest_xdist_auto_num_workers` hook in `conftest.py`.
 - Fixed network test port collisions across xdist workers — each worker now
   gets a dedicated port range based on worker ID.
+- Switched test fixtures and helpers from `--debug` (file logging with
+  `os.fsync`) to `--verbose` (stdout logging), reducing test suite runtime
+  by ~58%.
 
 ---
 

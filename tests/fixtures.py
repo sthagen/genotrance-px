@@ -122,18 +122,18 @@ def px_cli_env_none(request):
 def px_debug(px_cli_env, monkeypatch):
     # debug via cli or env = 2
     if px_cli_env == "env":
-        monkeypatch.setenv("PX_LOG", "1")
+        monkeypatch.setenv("PX_LOG", "4")
         return ""
-    return "--debug"
+    return "--verbose"
 
 
 @pytest.fixture
 def px_debug_none(px_cli_env_none, monkeypatch):
     # debug via cli, env or none = 3
     if px_cli_env_none == "cli":
-        return "--debug"
+        return "--verbose"
     elif px_cli_env_none == "env":
-        monkeypatch.setenv("PX_LOG", "1")
+        monkeypatch.setenv("PX_LOG", "4")
     else:
         monkeypatch.delenv("PX_LOG", raising=False)
 

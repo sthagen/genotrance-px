@@ -115,8 +115,8 @@ class TestDebugClass:
         with open(logfile) as f:
             content = f.read()
         assert "tree test" in content
-        # Should contain process/thread info
-        assert "MainProcess" in content or "Process" in content
+        # --debug mode (file) should contain call tree with / separators
+        assert "/" in content
 
     def test_get_print(self, tmp_path):
         logfile = str(tmp_path / "getprint.log")

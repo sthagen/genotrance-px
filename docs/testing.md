@@ -9,8 +9,8 @@ Tests live in `tests/`:
 | File | Scope |
 |------|-------|
 | `conftest.py` | Pytest configuration — path setup, plaintext keyring backend, xdist auto-parallelism hook |
-| `fixtures.py` | Shared test fixtures — port allocation, Px server instances, auth parametrisation |
-| `helpers.py` | Utility functions — subprocess management, port checks, keyring setup |
+| `fixtures.py` | Shared test fixtures — port allocation, Px server instances (launched with `--verbose`), auth parametrisation |
+| `helpers.py` | Utility functions — subprocess management (`run_px` launches Px with `--verbose`), port checks, keyring setup |
 | `test_benchmark.py` | Concurrency benchmarks — HTTP/CONNECT throughput, thread count, memory at various concurrency levels (marked `benchmark`, run via `make benchmark`) |
 | `test_config.py` | Configuration utility tests — `get_logfile`, `get_config_dir`, `get_host_ips`, defaults, save, install |
 | `test_debug.py` | Debug module tests — `Debug` singleton, `pprint`, `dprint` |

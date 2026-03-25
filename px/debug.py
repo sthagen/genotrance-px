@@ -4,7 +4,6 @@ import contextlib
 import multiprocessing
 import os
 import sys
-import threading
 import time
 
 
@@ -25,6 +24,8 @@ class Debug:
     file = None
     name = ""
     mode = ""
+
+    workers = 1
 
     def __new__(cls, name="", mode=""):
         "Create a singleton instance of Debug"
@@ -78,30 +79,23 @@ class Debug:
 
     def print(self, msg):
         "Print message to stdout and debug file if open"
-        offset = 0
+        # Process name prefix only in multi-worker mode
+        prefix = ""
+        if self.workers > 1:
+            prefix = multiprocessing.current_process().name + ": "
+        # Include call stack for diagnostics
         tree = ""
+        offset = 0
         while True:
             try:
-                name = sys._getframe(offset).f_code.co_name
                 offset += 1
-                if name != "print":
-                    tree = "/" + name + tree
-                if offset > 3:
+                if offset > 2:
+                    tree = "/" + sys._getframe(offset).f_code.co_name + tree
+                if offset > 4:
                     break
             except ValueError:
                 break
-        sys.stdout.write(
-            multiprocessing.current_process().name
-            + ": "
-            + threading.current_thread().name
-            + ": "
-            + str(int(time.time()))
-            + ": "
-            + tree
-            + ": "
-            + msg
-            + "\n"
-        )
+        sys.stdout.write(prefix + str(int(time.time())) + ": " + tree + ": " + msg + "\n")
 
     def get_print(self):
         "Get self.print() method to call directly as print(msg)"
