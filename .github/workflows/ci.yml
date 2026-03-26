@@ -73,6 +73,33 @@ jobs:
             uv run python -m pytest tests -n auto --tb=short -q
           fi
 
+  large-data-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Run large data transfer tests
+        timeout-minutes: 15
+        run: make test-large-data
+
+  large-data-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Run large data transfer tests
+        timeout-minutes: 15
+        run: uv run python -m pytest tests/test_large_data.py -m largedata -v -s
+
   kerberos:
     runs-on: ubuntu-latest
     steps:

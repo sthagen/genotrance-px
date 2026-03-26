@@ -45,6 +45,10 @@ test-kerberos: docker-kerberos ## Run Kerberos integration tests against a local
 benchmark: ## Run concurrency benchmarks
 	@uv run python -m pytest tests/test_benchmark.py -m benchmark -v -s
 
+.PHONY: test-large-data
+test-large-data: ## Run large data transfer reliability tests
+	@uv run python -m pytest tests/test_large_data.py -m largedata -v -s
+
 .PHONY: build
 build: clean ## Build sdist and wheel
 	@uv build

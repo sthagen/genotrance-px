@@ -42,19 +42,20 @@
 
 ### Internal
 - Added `h11` runtime dependency, `psutil` dev dependency.
-- Added concurrency benchmark tests (`make benchmark`) covering HTTP
-  throughput, CONNECT tunnel throughput, thread pool saturation, active data
-  exchange, thread count bounds, and memory bounds.
 - Wired `--threads` to `asyncio` default executor pool size.
-- Switched benchmark tests to use `mcurl.Curl` as the HTTP client instead of
-  `http.client` and raw sockets.
 - Dynamic xdist worker count (`-n auto`) — auto-scales to hardware via a
   platform-aware `pytest_xdist_auto_num_workers` hook in `conftest.py`.
-- Fixed network test port collisions across xdist workers — each worker now
-  gets a dedicated port range based on worker ID.
 - Switched test fixtures and helpers from `--debug` (file logging with
   `os.fsync`) to `--verbose` (stdout logging), reducing test suite runtime
   by ~58%.
+- Added concurrency benchmark tests (`make benchmark`) covering HTTP
+  throughput, CONNECT tunnel throughput, thread pool saturation, active data
+  exchange, thread count bounds, and memory bounds. Benchmarks now test up to
+  1 000–1 024 concurrent connections with sliding success thresholds for
+  barrier-synchronised active tunnel tests.
+- Added large data transfer reliability tests (`make test-large-data`) with
+  SHA-256 integrity verification for concurrent multi-MB GET/POST over HTTP
+  and HTTPS. CI jobs run these on both Linux and Windows.
 
 ---
 

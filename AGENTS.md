@@ -49,4 +49,4 @@ Px has both **user-facing** and **developer-facing** documentation. Both must be
 
 - Make sure test cases test all features and configurations of the project.
 - When adding new features or fixing bugs, add or update tests to cover the new behaviour.
-- All tests must pass on CPython 3.10–3.14 (including free-threaded 3.13t/3.14t) before merging.
+- All tests must pass on CPython 3.10–3.14 before merging.

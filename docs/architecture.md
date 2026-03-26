@@ -273,20 +273,29 @@ _handle_request()
 
 ### Benchmark results
 
-With default `--threads=32` on a single worker process (`--workers=1`):
+With default `--threads=32` on a single worker process (`--workers=1`).
+Benchmarks test up to 1 000–1 024 concurrent connections.
 
 | Metric | Linux | Windows |
 |--------|-------|---------|
-| HTTP throughput (200 concurrent) | ~40 req/s | ~42 req/s |
-| CONNECT throughput (200 concurrent) | ~22 req/s | ~48 req/s |
-| Active tunnel data exchange (128 tunnels) | ~50 req/s | 128/128 succeeded |
-| Thread count under load | 35 | 18–24 |
-| Memory baseline / under load | 60 MB | 84–85 MB |
-| Thread pool saturation point | concurrency=32 | concurrency=32 |
+| HTTP throughput (1 000 concurrent) | ~620 req/s, 200/200 | ~250 req/s, 200/200 |
+| CONNECT throughput (1 000 concurrent) | ~520 req/s, 200/200 | ~267 req/s, 200/200 |
+| Thread pool saturation (1 024 concurrent) | ~770 req/s, 200/200 | ~256 req/s, 200/200 |
+| Active tunnel data exchange (512 tunnels) | ~80–100% succeed | 512/512 succeed |
+| Active tunnel data exchange (1 024 tunnels) | ~30–67% succeed | ~72% succeed |
+| Thread count under load | 35 (constant) | 40–46 (constant) |
+| Memory baseline / under load | ~57 MB / ~65 MB | ~87 MB / ~88 MB |
+| Thread pool saturation point | concurrency ≈ 32 | concurrency ≈ 128 |
 
 Thread count stays bounded near the thread pool size regardless of active tunnel
-count — the zero-thread relay design keeps tunnels off the pool entirely. Memory
-growth is minimal under load (~1 MB from baseline to 512 concurrent connections).
+count — the zero-thread relay design keeps tunnels off the pool entirely.
+`psutil.num_threads()` reports total OS threads (pool + main + event loop +
+runtime helpers); on Windows the ProactorEventLoop's IOCP completion threads add
+a few more, hence 40–46 vs 35 on Linux, but neither grows with tunnel count.
+Memory growth is modest under load. The active data exchange test uses
+barrier-synchronised threads so all tunnels fire simultaneously; at 1 024
+tunnels, OS-level limits (FDs, kernel buffers) become the dominant factor rather
+than the proxy itself.
 
 ## Error handling
 

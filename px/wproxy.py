@@ -1,5 +1,6 @@
 "Load proxy information from the operating system"
 
+import asyncio
 import socket
 import sys
 import urllib.parse
@@ -258,6 +259,17 @@ class _WproxyBase:
             return parse_proxy(self.pac.find_proxy_for_url(url, netloc[0])), netloc, path
 
         return None, netloc, path
+
+    async def async_find_proxy_for_url(self, url):
+        """Async wrapper — offloads to thread pool when blocking I/O is needed.
+
+        noproxy check calls socket.getaddrinfo(), PAC mode runs quickjs + dnsResolve(),
+        and Windows MODE_AUTO/MODE_PAC call WinHttpGetProxyForUrl. All block.
+        When none of these apply, runs inline with no thread pool overhead.
+        """
+        if self.noproxy.size or self.mode in (MODE_CONFIG_PAC, MODE_AUTO, MODE_PAC):
+            return await asyncio.to_thread(self.find_proxy_for_url, url)
+        return self.find_proxy_for_url(url)
 
 
 if sys.platform == "win32":

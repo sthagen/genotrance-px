@@ -223,6 +223,10 @@ class TunnelRelay:
         if data:
             self._last_activity = time.monotonic()
             self._cl += len(data)
+            # If buffer already has pending data, append to preserve ordering
+            if self._to_upstream:
+                self._to_upstream.extend(data)
+                return
             try:
                 sent = os.write(self._upstream_fd, data)
                 if sent < len(data):
@@ -246,6 +250,10 @@ class TunnelRelay:
         if data:
             self._last_activity = time.monotonic()
             self._cs += len(data)
+            # If buffer already has pending data, append to preserve ordering
+            if self._to_client:
+                self._to_client.extend(data)
+                return
             try:
                 sent = os.write(self._client_fd, data)
                 if sent < len(data):
@@ -836,7 +844,7 @@ class ConnectionHandler:
         dprint(self.curl.easyhash + ": Path = " + target)
 
         # Get destination (proxy or direct)
-        ipport = self._get_destination(target)
+        ipport = await self._get_destination(target)
         if ipport is None:
             dprint(self.curl.easyhash + ": Configuring proxy settings")
             server = self.proxy_servers[0][0]
@@ -906,16 +914,21 @@ class ConnectionHandler:
 
         STATE.mcurl.remove(self.curl)
 
-    def _get_destination(self, target):
+    async def _get_destination(self, target):
         "Get destination - returns netloc for DIRECT or None for proxy"
-        # Reload proxy info if timeout exceeded
+        # Reload proxy info if timeout exceeded — fast path is a timestamp
+        # check; only the actual PAC reload (re-fetching URL, re-parsing JS)
+        # blocks and that is rare (proxyreload interval)
         STATE.reload_proxy()
 
-        # Check Kerberos ticket validity
+        # Check Kerberos ticket validity — fast path is a timestamp check;
+        # only subprocess calls (klist/kinit) block and those are rare
         STATE.reload_kerberos()
 
-        # Find proxy
-        servers, netloc, _path = STATE.wproxy.find_proxy_for_url(("https://" if "://" not in target else "") + target)
+        # Find proxy — async_find_proxy_for_url offloads to thread pool when
+        # noproxy or PAC evaluation would block (getaddrinfo / quickjs)
+        url = ("https://" if "://" not in target else "") + target
+        servers, netloc, _path = await STATE.wproxy.async_find_proxy_for_url(url)
         if len(servers) == 0 or servers[0] == wproxy.DIRECT:
             dprint(self.curl.easyhash + ": Direct connection")
             return netloc

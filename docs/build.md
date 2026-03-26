@@ -49,6 +49,10 @@ Runs on pushes to the `devel` branch and on pull requests (fast feedback loop).
   Uses the shared `.github/actions/setup-python-env` action for consistent
   environment setup. macOS excludes `test_network.py` due to GitHub Actions
   environment limitations.
+- **large-data-linux** / **large-data-windows** — runs the large data transfer
+  reliability tests (`test_large_data.py`) on Ubuntu and Windows respectively.
+  These verify multi-megabyte GET/POST integrity over HTTP and HTTPS with
+  concurrent connections.
 - **kerberos** — builds the KDC Docker images (`make docker-kerberos`) and runs
   the Kerberos integration tests against local MIT and Heimdal KDCs on
   Ubuntu. Exercises real ticket acquisition, renewal, expiry parsing, and

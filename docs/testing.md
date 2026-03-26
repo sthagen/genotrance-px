@@ -4,7 +4,7 @@
 
 ## Test suite layout
 
-Tests live in `tests/`:
+Tests live in `tests/`.
 
 | File | Scope |
 |------|-------|
@@ -13,6 +13,7 @@ Tests live in `tests/`:
 | `helpers.py` | Utility functions — subprocess management (`run_px` launches Px with `--verbose`), port checks, keyring setup |
 | `test_benchmark.py` | Concurrency benchmarks — HTTP/CONNECT throughput, thread count, memory at various concurrency levels (marked `benchmark`, run via `make benchmark`) |
 | `test_config.py` | Configuration utility tests — `get_logfile`, `get_config_dir`, `get_host_ips`, defaults, save, install |
+| `test_large_data.py` | Large data transfer reliability — concurrent multi-MB GET/POST over HTTP and HTTPS with SHA-256 integrity verification (marked `largedata`, run via `make test-large-data`) |
 | `test_debug.py` | Debug module tests — `Debug` singleton, `pprint`, `dprint` |
 | `test_kerberos.py` | Kerberos ticket management — unit tests (mocked subprocess, Linux/macOS only) and Docker-based integration tests against local MIT and Heimdal KDCs (marked `integration`, run via `make test-kerberos`) |
 | `test_network.py` | Network integration tests — `--quit`, `--listen`, `--hostonly`, `--gateway`, `--allow`, `--noproxy` |
@@ -50,6 +51,49 @@ uv run python -m pytest tests --cov --cov-config=pyproject.toml --cov-report=xml
 
 # Run with parallel execution (auto-scales to hardware)
 uv run python -m pytest tests -n auto
+```
+
+### Windows testing via WSL2
+
+When running Windows tests from WSL2 using a Windows Python venv, the venv
+`Scripts` directory must be on `PATH` so that test helpers can find `px` when
+they call it via `os.system()` or `subprocess`. On systems where `px.exe`
+cannot run directly (e.g. policy restrictions), replace `px.exe` and `pxw.exe`
+in the venv `Scripts` directory with `.bat` wrappers that invoke
+`python -m px` instead.
+
+Setup (one-time):
+
+1. Create a Windows venv and install dev dependencies:
+   ```cmd
+   python -m venv .venv-win
+   .venv-win\Scripts\pip install -e . -f mcurllib
+   .venv-win\Scripts\pip install pytest pytest-xdist pytest-httpbin pytest-cov psutil
+   ```
+
+2. If `px.exe` cannot run, replace it with bat wrappers in `.venv-win/Scripts/`:
+   - `px.bat`: `@"%~dp0python.exe" -m px %*`
+   - `pxw.bat`: `@"%~dp0pythonw.exe" -m px %*`
+
+3. Prepend the `Scripts` directory to `PATH` before running pytest:
+   ```bash
+   VENV=/mnt/c/path/to/.venv-win
+   export PATH="$VENV/Scripts:$PATH"
+   ```
+
+Running tests (use the same commands as the Makefile targets):
+
+```bash
+PY="$VENV/Scripts/python.exe"
+
+# Default test suite (matches: make test)
+$PY -m pytest tests -n auto --cov --cov-config=pyproject.toml --cov-report=xml
+
+# Benchmarks (matches: make benchmark)
+$PY -m pytest tests/test_benchmark.py -m benchmark -v -s
+
+# Large data tests (matches: make test-large-data)
+$PY -m pytest tests/test_large_data.py -m largedata -v -s
 ```
 
 ### With a specific Python version
@@ -278,20 +322,22 @@ the bottleneck being measured.
 ### What is measured
 
 - **HTTP GET throughput** (`TestHTTPBenchmark`) — requests per second at
-  concurrency 1–200, verifying ≥80% success rate.
+  concurrency 1–1 000, verifying ≥80% success rate.
 - **CONNECT tunnel throughput** (`TestCONNECTBenchmark`) — CONNECT + TLS
-  handshake + GET at concurrency 1–200, verifying ≥60% success rate.
+  handshake + GET at concurrency 1–1 000, verifying ≥60% success rate.
 - **Thread count bounded** (`TestResourceUsage`) — verifies thread count stays
   constant under 50 concurrent connections (async relay should not spawn threads
   proportional to tunnels).
 - **Memory bounded** (`TestResourceUsage`) — verifies RSS does not more than
   double under 200 concurrent requests.
 - **Thread pool saturation** (`TestThreadSaturation`) — escalates concurrency
-  from 16 to 512 to find the point where the `--threads` pool becomes the
+  from 16 to 1 024 to find the point where the `--threads` pool becomes the
   bottleneck and throughput plateaus.
-- **Active data exchange** (`TestActiveDataExchange`) — launches 4–512
+- **Active data exchange** (`TestActiveDataExchange`) — launches 4–1 024
   simultaneous CONNECT tunnels that all actively exchange data via a barrier,
-  stressing the event loop's FD watcher / IOCP multiplexing.
+  stressing the event loop's FD watcher / IOCP multiplexing. Uses a sliding
+  success threshold (60% ≤256, 40% at 512, 25% at 1 024) since OS-level
+  limits dominate at extreme concurrency.
 
 ### Running
 
@@ -306,3 +352,37 @@ uv run python -m pytest tests/test_benchmark.py -m benchmark -v -s
 Results are printed as a table with columns for concurrency, success/failure
 counts, latency percentiles (avg, p50, p99), requests/sec, thread count, and
 RSS memory.
+
+---
+
+## Large data transfer tests
+
+`test_large_data.py` verifies that the proxy reliably transfers multi-megabyte
+payloads with data integrity. The tests are marked with `@pytest.mark.largedata`
+and excluded from the default test run. They use a custom async upstream server
+(HTTP + HTTPS) spawned in a separate process and `mcurl.Curl` as the client.
+
+### What is tested
+
+- **HTTP/HTTPS large GET** (`TestLargeGET`) — single downloads at 2, 5, 10, and
+  20 MB with SHA-256 integrity verification, plus 4 concurrent 5 MB downloads.
+- **HTTP/HTTPS large POST** (`TestLargePOST`) — single uploads at 2, 5, 10, and
+  20 MB with server-side SHA-256 verification, plus 4 concurrent 5 MB uploads.
+- **Mixed concurrent** (`TestMixedConcurrent`) — 3 GET + 3 POST transfers
+  running simultaneously over HTTP and HTTPS.
+
+### Running
+
+```bash
+# Via make
+make test-large-data
+
+# Via pytest directly
+uv run python -m pytest tests/test_large_data.py -m largedata -v -s
+```
+
+### CI
+
+The `large-data-linux` and `large-data-windows` jobs in `ci.yml` run these
+tests on every push to `devel`/`working` and on pull requests, ensuring
+cross-platform reliability for large transfers.
