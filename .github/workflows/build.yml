@@ -325,3 +325,12 @@ jobs:
 
       - name: Build and push Docker images
         run: python3 tools.py --docker --push --wheels-dir=artifacts/binary-linux-musl-x86_64/px.dist-linux-musl-x86_64-wheels
+
+      - name: Publish to Winget
+        uses: vedantmgoyal9/winget-releaser@main
+        with:
+          identifier: genotrance.px
+          version: ${{ needs.setup.outputs.version }}
+          installers-regex: '-windows-amd64\.zip$'
+          release-tag: v${{ needs.setup.outputs.version }}
+          token: ${{ secrets.WINGET_TOKEN }}

@@ -39,6 +39,9 @@
 - Optimized `--verbose` logging: removed `os.fsync()` and file I/O overhead,
   skipped process/thread name lookup when `--workers=1`. Log output is more
   compact (timestamp + call tree + message) while retaining diagnostic value.
+- Added Winget package support — Px can now be installed on Windows via
+  `winget install genotrance.px`. Manifests are submitted automatically on
+  release via `vedantmgoyal9/winget-releaser`. Addresses #115, PR #264.
 
 ### Internal
 - Added `h11` runtime dependency, `psutil` dev dependency.

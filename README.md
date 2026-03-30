@@ -19,10 +19,16 @@ Px uses libcurl and supports all the authentication mechanisms supported by
 ## Installation
 
 ```bash
-python -m pip install px-proxy
+pip install px-proxy
+uv tool install px-proxy
+pipx install px-proxy
 ```
 
-On Windows, [scoop](https://scoop.sh) can also be used: `scoop install px`
+On Windows, [Winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+and [Scoop](https://scoop.sh) can also be used:
+
+    winget install genotrance.px
+    scoop install px
 
 Prebuilt binaries and offline wheel packages are available on the
 [releases](https://github.com/genotrance/px/releases) page. See the
@@ -90,7 +96,7 @@ for platform-specific keyring setup and client authentication.
 | | |
 |---|---|
 | **User guides** | |
-| [Installation](https://github.com/genotrance/px/blob/master/docs/installation.md) | pip, wheels, binary, Docker, scoop, WinSW, uninstallation |
+| [Installation](https://github.com/genotrance/px/blob/master/docs/installation.md) | pip, wheels, binary, Docker, Winget, Scoop, WinSW, uninstallation |
 | [Usage](https://github.com/genotrance/px/blob/master/docs/usage.md) | Credentials, client auth, examples, dependencies, limitations |
 | [Configuration](https://github.com/genotrance/px/blob/master/docs/configuration.md) | All CLI flags, environment variables, INI keys, auth types |
 | **Developer guides** | |

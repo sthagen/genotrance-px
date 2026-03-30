@@ -88,8 +88,11 @@ and called from the workflow steps.
   macOS excludes `test_network.py` via `PX_CI_MINIMAL`.
 - **release** — on `master` only: publishes the sdist and wheel to PyPI using
   trusted publishing, creates and pushes a version tag, creates a GitHub
-  release with changelog notes extracted via `tools.py --history`, and builds
-  and pushes Docker images to Docker Hub.
+  release with changelog notes extracted via `tools.py --history`, submits
+  the Windows installer to [Winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+  via `vedantmgoyal9/winget-releaser`, and builds and pushes Docker images
+  to Docker Hub. The Winget step requires a `WINGET_TOKEN` repository secret
+  (classic PAT with `public_repo` scope).
 
 ## `build.sh`
 

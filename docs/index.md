@@ -8,7 +8,7 @@ proxy servers using Windows SSPI or configured credentials.
 
 | File | Description |
 |------|-------------|
-| [installation.md](installation.md) | Install via pip, wheels, binary, Docker, scoop; uninstallation |
+| [installation.md](installation.md) | Install via pip, wheels, binary, Docker, Winget, Scoop; uninstallation |
 | [usage.md](usage.md) | Credentials, client auth, examples, dependencies, limitations |
 | [configuration.md](configuration.md) | All CLI flags, environment variables, INI keys, auth types |
 

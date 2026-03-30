@@ -2,14 +2,25 @@
 
 ---
 
-## Quick install via pip
+## Quick install
 
 If direct internet access is available along with Python (≥ 3.10):
 
-    python -m pip install px-proxy
+    pip install px-proxy
 
-On Windows, [scoop](https://scoop.sh) can also be used:
+Or using [uv](https://docs.astral.sh/uv/):
 
+    uv tool install px-proxy
+    uvx --from px-proxy px
+
+Or using [pipx](https://pipx.pypa.io/):
+
+    pipx install px-proxy
+
+On Windows, [Winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
+and [Scoop](https://scoop.sh) can also be used:
+
+    winget install genotrance.px
     scoop install px
 
 ## Offline install via wheels
