@@ -1,5 +1,6 @@
 "Configuration and state management"
 
+import collections.abc
 import configparser
 import contextlib
 import getpass
@@ -399,7 +400,7 @@ class State:
 
     test = None
 
-    callbacks = None
+    callbacks: dict[str, collections.abc.Callable] | None = None
 
     def __new__(cls):
         "Create a singleton instance of State"
@@ -666,7 +667,7 @@ class State:
 
         # Non-config
         elif name in ["test"] and callback is not None:
-            callback(val)  # type: ignore[operator]
+            callback(val)
 
     def save(self):
         "Save config to file"
