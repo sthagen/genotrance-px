@@ -278,6 +278,7 @@ keepalive period is 60 seconds.
 
 Px depends on the following Python packages:
 
+- [h11](https://pypi.org/project/h11/)
 - [keyring](https://pypi.org/project/keyring/)
 - [keyrings.alt](https://pypi.org/project/keyrings.alt/)
 - [netaddr](https://pypi.org/project/netaddr/)

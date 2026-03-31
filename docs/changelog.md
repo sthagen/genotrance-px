@@ -36,21 +36,22 @@
 - Reduced per-request overhead: double-checked locking in `reload_proxy()`,
   cached `get_curl_features()` and `noproxy_hosts`, shallow copy for proxy
   server lists, tuples for hot-path membership checks.
-- Optimized `--verbose` logging: removed `os.fsync()` and file I/O overhead,
-  skipped process/thread name lookup when `--workers=1`. Log output is more
+- Optimized `--verbose` logging: skipped file I/O overhead and
+  process/thread name lookup when `--workers=1`. Log output is more
   compact (timestamp + call tree + message) while retaining diagnostic value.
 - Added Winget package support — Px can now be installed on Windows via
   `winget install genotrance.px`. Manifests are submitted automatically on
   release via `vedantmgoyal9/winget-releaser`. Addresses #115, PR #264.
+- Documented WinSW service account and environment variable options for
+  running Px as a Windows service with SSPI or explicit credentials (#259).
 
 ### Internal
 - Added `h11` runtime dependency, `psutil` dev dependency.
 - Wired `--threads` to `asyncio` default executor pool size.
 - Dynamic xdist worker count (`-n auto`) — auto-scales to hardware via a
   platform-aware `pytest_xdist_auto_num_workers` hook in `conftest.py`.
-- Switched test fixtures and helpers from `--debug` (file logging with
-  `os.fsync`) to `--verbose` (stdout logging), reducing test suite runtime
-  by ~58%.
+- Switched test fixtures and helpers from `--debug` (file logging) to
+  `--verbose` (stdout logging), reducing test suite runtime by ~58%.
 - Added concurrency benchmark tests (`make benchmark`) covering HTTP
   throughput, CONNECT tunnel throughput, thread pool saturation, active data
   exchange, thread count bounds, and memory bounds. Benchmarks now test up to

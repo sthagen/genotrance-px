@@ -25,4 +25,4 @@ proxy servers using Windows SSPI or configured credentials.
 
 - **PyPI name**: `px-proxy`
 - **Requires**: Python ≥ 3.10
-- **Key dependencies**: [pymcurl](https://pypi.org/project/pymcurl/), [keyring](https://pypi.org/project/keyring/), [keyrings.alt](https://pypi.org/project/keyrings.alt/), [netaddr](https://pypi.org/project/netaddr/), [psutil](https://pypi.org/project/psutil/), [pyspnego](https://pypi.org/project/pyspnego/), [quickjs-ng](https://pypi.org/project/quickjs-ng/), [python-dotenv](https://pypi.org/project/python-dotenv/)
+- **Key dependencies**: [h11](https://pypi.org/project/h11/), [pymcurl](https://pypi.org/project/pymcurl/), [keyring](https://pypi.org/project/keyring/), [keyrings.alt](https://pypi.org/project/keyrings.alt/), [netaddr](https://pypi.org/project/netaddr/), [psutil](https://pypi.org/project/psutil/), [pyspnego](https://pypi.org/project/pyspnego/), [quickjs-ng](https://pypi.org/project/quickjs-ng/), [python-dotenv](https://pypi.org/project/python-dotenv/)
