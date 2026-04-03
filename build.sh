@@ -271,6 +271,15 @@ build_local() {
     HOSTGID="$(id -g)"
     CHOWN="chown -R $HOSTUID:$HOSTGID"
 
+    # Clean up root-owned leftovers from previous Docker runs that would
+    # block the host-side tools.py --wheel (its rmtree loops forever on
+    # permission errors)
+    for d in build px_proxy.egg-info .venv; do
+        if [ -d "$d" ] && [ "$(stat -c '%u' "$d")" != "$HOSTUID" ]; then
+            sudo rm -rf "$d"
+        fi
+    done
+
     echo "=== Building sdist ==="
     uv sync
     uv pip install build twine

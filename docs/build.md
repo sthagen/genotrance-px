@@ -44,11 +44,16 @@ All CI and release builds run via GitHub Actions. The workflows live in
 Runs on pushes to the `devel` branch and on pull requests (fast feedback loop).
 
 - **quality** — runs `make check` (pre-commit, ruff, mypy).
-- **tests** — runs `pytest` across an expanded matrix: Ubuntu on Python
-  3.10–3.14, macOS on 3.10 and 3.14, Windows on 3.10 and 3.14 (9 jobs total).
-  Uses the shared `.github/actions/setup-python-env` action for consistent
-  environment setup. macOS excludes `test_network.py` due to GitHub Actions
-  environment limitations.
+- **tests** — runs `pytest` across a matrix: Ubuntu x86_64 on Python
+  3.10–3.14, Ubuntu ARM64 (`ubuntu-24.04-arm`) on 3.10 and 3.14, macOS on
+  3.10 and 3.14, Windows on 3.10 and 3.14 (11 jobs total). Uses the shared
+  `.github/actions/setup-python-env` action for consistent environment
+  setup. macOS excludes `test_network.py` due to GitHub Actions environment
+  limitations.
+- **tests-musl** — runs `pytest` inside musllinux Docker containers on both
+  x86_64 (`ubuntu-latest`) and aarch64 (`ubuntu-24.04-arm`) with Python
+  3.10 and 3.14 (4 jobs total). This verifies Px works correctly on musl
+  libc without relying on the build workflow.
 - **large-data-linux** / **large-data-windows** — runs the large data transfer
   reliability tests (`test_large_data.py`) on Ubuntu and Windows respectively.
   These verify multi-megabyte GET/POST integrity over HTTP and HTTPS with
@@ -69,8 +74,10 @@ and called from the workflow steps.
   to downstream jobs.
 - **sdist** — builds the sdist and pure-Python wheel using `tools.py --wheel`.
 - **wheels** — builds dependency wheels for each platform inside manylinux,
-  musllinux, or native runners across Python 3.10–3.14. Uses
-  `build_wheels` from `build.sh`.
+  musllinux, or native runners across Python 3.10–3.14. x86_64 Linux jobs
+  run on `ubuntu-latest`, aarch64 Linux jobs run on `ubuntu-24.04-arm`
+  (native ARM64 runners) with the same container images running natively
+  instead of under QEMU emulation. Uses `build_wheels` from `build.sh`.
 - **binary** — builds Nuitka binaries (Linux/macOS) or the Python Embedded
   distribution (Windows) using `tools.py --nuitka` / `tools.py --embed`.
   Also packages dependency wheel archives with `tools.py --depspkg`.
@@ -78,11 +85,13 @@ and called from the workflow steps.
   Linux glibc builds run inside manylinux2014 containers using
   `/opt/python/cp313-cp313/bin/python3`. Linux musl builds use Alpine
   containers with system Python and dev headers since Nuitka needs
-  `Python.h` which the musllinux containers lack.
+  `Python.h` which the musllinux containers lack. Aarch64 builds run on
+  native `ubuntu-24.04-arm` runners.
 - **test-binary** — extracts the release archives produced by the binary job,
   then tests them using `tox` to verify functionality across all Python
   versions (3.10–3.14). Tests run inside musllinux and Ubuntu containers
-  on Linux and on native macOS/Windows runners. Uses `extract_archives`
+  on Linux and on native macOS/Windows runners. Aarch64 Linux tests run on
+  native `ubuntu-24.04-arm` runners. Uses `extract_archives`
   and `test_binary` from `build.sh`. The `PXBIN` environment variable is
   set so the `binary` tox environment can test the Nuitka binary directly.
   macOS excludes `test_network.py` via `PX_CI_MINIMAL`.

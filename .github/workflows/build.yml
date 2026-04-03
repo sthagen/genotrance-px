@@ -56,17 +56,15 @@ jobs:
           - os: ubuntu-latest
             image: "quay.io/pypa/manylinux2014_x86_64"
             name: linux-glibc-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             image: "quay.io/pypa/manylinux2014_aarch64"
             name: linux-glibc-aarch64
-            qemu: true
           - os: ubuntu-latest
             image: "quay.io/pypa/musllinux_1_2_x86_64"
             name: linux-musl-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             image: "quay.io/pypa/musllinux_1_2_aarch64"
             name: linux-musl-aarch64
-            qemu: true
           - os: macos-latest
             name: mac-arm64
           - os: windows-latest
@@ -77,12 +75,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
-      - name: Set up QEMU
-        if: matrix.qemu
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
 
       - name: Build wheels (Linux container)
         if: runner.os == 'Linux'
@@ -115,19 +107,17 @@ jobs:
           - os: ubuntu-latest
             image: "quay.io/pypa/manylinux2014_x86_64"
             name: linux-glibc-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             image: "quay.io/pypa/manylinux2014_aarch64"
             name: linux-glibc-aarch64
-            qemu: true
           - os: ubuntu-latest
             image: "alpine:3.21"
             name: linux-musl-x86_64
             alpine: true
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             image: "alpine:3.21"
             name: linux-musl-aarch64
             alpine: true
-            qemu: true
           - os: macos-latest
             name: mac-arm64
           - os: windows-latest
@@ -156,19 +146,12 @@ jobs:
           name: sdist
           path: wheel/
 
-      - name: Set up QEMU
-        if: matrix.qemu
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
-
       - name: Build Nuitka binary (Linux)
         if: runner.os == 'Linux'
         run: |
-          PLATFORM="${{ matrix.qemu && '--platform linux/arm64' || '' }}"
           SHELL_BIN="${{ matrix.alpine && '/bin/sh' || '/bin/bash' }}"
           docker run --rm -v ${{ github.workspace }}:/px -w /px \
-            $PLATFORM ${{ matrix.image }} $SHELL_BIN -c '. /px/build.sh && build_binary ${{ matrix.name }}'
+            ${{ matrix.image }} $SHELL_BIN -c '. /px/build.sh && build_binary ${{ matrix.name }}'
 
       - name: Build Nuitka binary (macOS)
         if: runner.os == 'macOS'
@@ -195,17 +178,15 @@ jobs:
           - os: ubuntu-latest
             container: "quay.io/pypa/musllinux_1_2_x86_64"
             name: linux-musl-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             container: "quay.io/pypa/musllinux_1_2_aarch64"
             name: linux-musl-aarch64
-            qemu: true
           - os: ubuntu-latest
             container: ubuntu
             name: linux-glibc-x86_64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             container: ubuntu
             name: linux-glibc-aarch64
-            qemu: true
           - os: macos-latest
             name: mac-arm64
           - os: windows-latest
@@ -232,19 +213,12 @@ jobs:
         if: runner.os != 'Linux'
         uses: ./.github/actions/setup-python-env
 
-      - name: Set up QEMU
-        if: matrix.qemu
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm64
-
       - name: Test (Linux container)
         if: runner.os == 'Linux'
         run: |
-          PLATFORM="${{ matrix.qemu && '--platform linux/arm64' || '' }}"
           docker run --rm --privileged \
             -v ${{ github.workspace }}:/px -w /px \
-            $PLATFORM ${{ matrix.container }} /bin/sh -c '. /px/build.sh && test_binary ${{ matrix.name }}'
+            ${{ matrix.container }} /bin/sh -c '. /px/build.sh && test_binary ${{ matrix.name }}'
 
       - name: Test (macOS/Windows)
         if: runner.os != 'Linux'

@@ -42,6 +42,10 @@ jobs:
             python-version: "3.13"
           - os: ubuntu-latest
             python-version: "3.14"
+          - os: ubuntu-24.04-arm
+            python-version: "3.10"
+          - os: ubuntu-24.04-arm
+            python-version: "3.14"
           - os: macos-latest
             python-version: "3.10"
           - os: macos-latest
@@ -72,6 +76,48 @@ jobs:
           else
             uv run python -m pytest tests -n auto --tb=short -q
           fi
+
+  tests-musl:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            image: "quay.io/pypa/musllinux_1_2_x86_64"
+            name: musl-x86_64
+            pyver: "310"
+          - os: ubuntu-latest
+            image: "quay.io/pypa/musllinux_1_2_x86_64"
+            name: musl-x86_64
+            pyver: "314"
+          - os: ubuntu-24.04-arm
+            image: "quay.io/pypa/musllinux_1_2_aarch64"
+            name: musl-aarch64
+            pyver: "310"
+          - os: ubuntu-24.04-arm
+            image: "quay.io/pypa/musllinux_1_2_aarch64"
+            name: musl-aarch64
+            pyver: "314"
+    runs-on: ${{ matrix.os }}
+    name: test ${{ matrix.name }} py${{ matrix.pyver }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run tests in musllinux container
+        timeout-minutes: 60
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/px -w /px \
+            ${{ matrix.image }} /bin/bash -c '
+              PY=/opt/python/cp${{ matrix.pyver }}-cp${{ matrix.pyver }}/bin/python3
+              if [ ! -f "$PY" ]; then echo "Python ${{ matrix.pyver }} not found"; exit 1; fi
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              . ~/.local/bin/env
+              "$PY" -m venv /tmp/test-env
+              . /tmp/test-env/bin/activate
+              uv pip install -e .
+              uv pip install keyring keyrings.alt psutil pytest pytest-xdist pytest-httpbin pytest-cov
+              python -m pytest tests -n auto --tb=short -q
+            '
 
   large-data-linux:
     runs-on: ubuntu-latest

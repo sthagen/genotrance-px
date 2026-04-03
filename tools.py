@@ -46,8 +46,13 @@ def get_argval(name):
 
 def rmtree(dirs):
     for d in dirs.split(" "):
+        retries = 0
         while os.path.exists(d):
             shutil.rmtree(d, True)
+            retries += 1
+            if retries > 25:
+                print(f"Failed to remove {d} after {retries} attempts - check permissions")
+                sys.exit(1)
             time.sleep(0.2)
 
 

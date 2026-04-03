@@ -2,7 +2,7 @@
 
 ---
 
-## v0.11.0 — 2026-04-02
+## v0.11.0 — 2026-04-03
 
 ### New features
 - Added Kerberos ticket management (`--kerberos`) for Linux and macOS — Px

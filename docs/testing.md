@@ -138,15 +138,19 @@ To override the auto-computed value, either pass an explicit `-n N` or set the
 ## CI testing
 
 GitHub Actions runs the full test suite on every push to the `devel` branch and
-on pull requests via `.github/workflows/ci.yml`. The matrix covers 9
-configurations: Ubuntu on Python 3.10–3.14, macOS on 3.10 and 3.14, and Windows
-on 3.10 and 3.14. All Python versions (3.10–3.14) are additionally tested via
-tox in the build workflow's `test-binary` job.
+on pull requests via `.github/workflows/ci.yml`. The test matrix covers 11
+configurations: Ubuntu x86_64 on Python 3.10–3.14, Ubuntu ARM64
+(`ubuntu-24.04-arm`) on 3.10 and 3.14, macOS on 3.10 and 3.14, and Windows on
+3.10 and 3.14. An additional `tests-musl` job runs the test suite inside
+musllinux Docker containers on both x86_64 and aarch64 with Python 3.10 and
+3.14 (4 jobs). All Python versions (3.10–3.14) are additionally tested via tox
+in the build workflow's `test-binary` job.
 
 The build workflow (`.github/workflows/build.yml`) triggers on pushes to
 `master` and manual dispatch. It tests built artifacts using tox across all
 Python versions (3.10–3.14) inside musllinux and Ubuntu Docker containers and on
-native macOS/Windows runners.
+native macOS/Windows runners. Aarch64 Linux jobs run on native `ubuntu-24.04-arm`
+runners with containers running natively, avoiding QEMU emulation overhead.
 
 ---
 
