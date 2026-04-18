@@ -103,6 +103,11 @@ export DBUS_SESSION_BUS_ADDRESS=$(dbus-daemon --fork --config-file=/usr/share/db
 echo 'somecredstorepass' | gnome-keyring-daemon --unlock
 ```
 
+gnome-keyring-daemon 48+ requires the keyrings directory
+(`~/.local/share/keyrings`) to be owned by the current user with mode `700`.
+If the directory has incorrect ownership or permissions, the daemon silently
+fails to create the keyring collection with a `Prompt dismissed.` error.
+
 If the default SecretService backend does not work, install a third-party
 [backend](https://github.com/jaraco/keyring#third-party-backends).
 
@@ -150,7 +155,11 @@ Mount `/etc/krb5.conf` from the host (or bake it into a custom image) so that
 Kerberos can find the KDC for your realm.
 
 The full image requires `--cap-add IPC_LOCK` so that `gnome-keyring-daemon` can
-lock memory pages for secure credential storage.
+lock memory pages for secure credential storage. The keyrings volume must be
+owned by `root` with mode `700` inside the container — do not pre-create the
+host directory; let Docker create it so that ownership is correct. If the
+directory has wrong ownership, gnome-keyring-daemon silently fails with a
+`Prompt dismissed.` error.
 
 The recommended approach is to store the password in keyring rather than passing
 it via `PX_PASSWORD`. Mount a host directory for keyring persistence and save

@@ -149,6 +149,8 @@ version is smaller but requires `PX_PASSWORD` and `PX_CLIENT_PASSWORD`
 environment variables for credentials. The full image requires
 `--cap-add IPC_LOCK` at runtime because gnome-keyring-daemon (48+) links
 libcap-ng which aborts without the `IPC_LOCK` capability in containers.
+Mounted keyring volumes must be owned by `root` with mode `700` inside the
+container; gnome-keyring-daemon 48+ refuses to create the collection otherwise.
 Images are built and pushed automatically
 as part of the `release` job in `build.yml` on merge to `master`. Docker Hub
 credentials are stored as repository secrets (`DOCKERHUB_USERNAME` and
